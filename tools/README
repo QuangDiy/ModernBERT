@@ -1,0 +1,19 @@
+Bash run count param
+
+`bash
+(Get-Content yamls\main\flex-bert-vi-base.yaml) `
+  -replace 'sliding_window:\s*\d+', 'sliding_window: -1' `
+  -replace 'global_attn_every_n_layers:\s*\d+', 'global_attn_every_n_layers: -1' `
+  -replace 'loss_function:\s*fa_cross_entropy', 'loss_function: cross_entropy' `
+| Set-Content yamls\main\flex-bert-vi-base.count.yaml
+
+python .\tools\count_params.py --dir yamls\main --pattern flex-bert-vi-base.count.yaml --tokenizer tokenizer\huit-bert --summary
+`
+
+(Get-Content yamls\main\flex-bert-base.yaml) `
+  -replace 'sliding_window:\s*\d+', 'sliding_window: -1' `
+  -replace 'global_attn_every_n_layers:\s*\d+', 'global_attn_every_n_layers: -1' `
+  -replace 'loss_function:\s*fa_cross_entropy', 'loss_function: cross_entropy' `
+| Set-Content yamls\main\flex-bert-base.count.yaml
+
+python .\tools\count_params.py --dir yamls\main --pattern flex-bert-base.count.yaml --tokenizer tokenizer\huit-bert --summary
