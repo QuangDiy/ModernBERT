@@ -1,6 +1,75 @@
-Bash run count param
+# Tools
 
-`bash
+This directory contains utility scripts for the ModernBERT project.
+
+## merge_mds_subsets.py
+
+Merge multiple MDS subset folders into unified train/val/train_small splits.
+
+### Usage
+
+```bash
+python tools/merge_mds_subsets.py \
+  --source_dir ./source_data \
+  --output_dir ./data \
+  --datasets FineWeb2-vie-mds FineWiki-mds
+```
+
+### Arguments
+
+- `--source_dir`: Source directory containing dataset folders
+- `--output_dir`: Output directory for merged splits (e.g., ./data)
+- `--datasets`: List of dataset folder names to merge
+- `--train_ratio`: Ratio of data for training (default: 0.9)
+- `--val_ratio`: Ratio of data for validation (default: 0.1)
+- `--train_small_ratio`: Ratio of train data for train_small split (default: 0.05)
+- `--seed`: Random seed for reproducible splits (default: 42)
+- `--no-symlinks`: Copy files instead of creating symlinks
+- `--only-train-small`: Only create train_small split without train/val (uses train_small_ratio from all data)
+
+### Example
+
+Merge FineWeb2-vie-mds and FineWiki-mds datasets:
+
+```bash
+python tools/merge_mds_subsets.py \
+  --source_dir ./source_data \
+  --output_dir ./data \
+  --datasets FineWeb2-vie-mds FineWiki-mds \
+  --train_ratio 0.9 \
+  --val_ratio 0.1 \
+  --train_small_ratio 0.05
+```
+
+This will create:
+- `./data/train/` - 90% of data for training
+- `./data/val/` - 10% of data for validation
+- `./data/train_small/` - 5% of train data for quick testing
+
+### Only create train_small (for quick testing)
+
+If you only want to create a small dataset for testing:
+
+```bash
+python tools/merge_mds_subsets.py \
+  --source_dir ./source_data \
+  --output_dir ./data \
+  --datasets FineWeb2-vie-mds FineWiki-mds \
+  --train_small_ratio 0.05 \
+  --only-train-small
+```
+
+This will create only:
+- `./data/train_small/` - 5% of all data (no train or val folders)
+
+## count_params.py
+
+Count parameters in a model configuration.
+
+### Usage (PowerShell)
+
+```powershell
+# For flex-bert-vi-base
 (Get-Content yamls\main\flex-bert-vi-base.yaml) `
   -replace 'sliding_window:\s*\d+', 'sliding_window: -1' `
   -replace 'global_attn_every_n_layers:\s*\d+', 'global_attn_every_n_layers: -1' `
@@ -8,8 +77,10 @@ Bash run count param
 | Set-Content yamls\main\flex-bert-vi-base.count.yaml
 
 python .\tools\count_params.py --dir yamls\main --pattern flex-bert-vi-base.count.yaml --tokenizer tokenizer\huit-bert --summary
-`
+```
 
+```powershell
+# For flex-bert-base
 (Get-Content yamls\main\flex-bert-base.yaml) `
   -replace 'sliding_window:\s*\d+', 'sliding_window: -1' `
   -replace 'global_attn_every_n_layers:\s*\d+', 'global_attn_every_n_layers: -1' `
@@ -17,3 +88,4 @@ python .\tools\count_params.py --dir yamls\main --pattern flex-bert-vi-base.coun
 | Set-Content yamls\main\flex-bert-base.count.yaml
 
 python .\tools\count_params.py --dir yamls\main --pattern flex-bert-base.count.yaml --tokenizer tokenizer\huit-bert --summary
+```

@@ -1,9 +1,9 @@
 # Note that some of the fields in this template haven't been filled in yet.
 # Please resolve any `null` fields before launching!
 
-# Follow the instructions in the README to set up ./my-copy-c4
-# Or point data paths to your remote C4 dataset
-data_local: ./my-copy-c4
+# Vietnamese dataset merged from FineWeb2-vie-mds and FineWiki-mds
+# Use tools/merge_mds_subsets.py to prepare the data structure
+data_local: ./data
 data_remote: # If blank, files must be present in data_local
 
 max_seq_len: 1024
