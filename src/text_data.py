@@ -312,10 +312,13 @@ def build_streaming_dataset(
                     download_retry=stream.get("download_retry", None) or cfg.dataset.get("download_retry", 2),
                     download_timeout=stream.get("download_timeout", None) or cfg.dataset.get("download_timeout", 60),
                     validate_hash=stream.get("validate_hash", None) or cfg.dataset.get("validate_hash", None),
-                    keep_zip=stream.get("keep_zip", None) or cfg.dataset.get("keep_zip", False),
+                    keep_zip=stream.get("keep_zip", None) or cfg.dataset.get("keep_zip", True),
                 )
             )
 
+    # Set keep_zip to True by default to avoid decompression race conditions
+    keep_zip = cfg.dataset.get("keep_zip", True)
+    
     # build dataset potentially with streams
     dataset = StreamingTextDataset(
         tokenizer=tokenizer,
@@ -327,7 +330,7 @@ def build_streaming_dataset(
         download_retry=cfg.dataset.get("download_retry", 2),
         download_timeout=cfg.dataset.get("download_timeout", 60),
         validate_hash=cfg.dataset.get("validate_hash", None),
-        keep_zip=cfg.dataset.get("keep_zip", False),
+        keep_zip=keep_zip,
         epoch_size=cfg.dataset.get("epoch_size", None),
         predownload=cfg.dataset.get("predownload", 100_000),
         partition_algo=cfg.dataset.get("partition_algo", "orig"),

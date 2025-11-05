@@ -462,7 +462,7 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
         load_weights_only=cfg.get("load_weights_only", False),
         python_log_level=cfg.get("python_log_level", None),
         autoresume=cfg.get("autoresume", None),
-        fsdp_config=cfg.get("fsdp_config", None),
+        parallelism_config=cfg.get("fsdp_config", None),
         compile_config=cfg.get("compile_config", None),
     )
 

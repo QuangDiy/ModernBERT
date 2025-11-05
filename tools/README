@@ -1,66 +1,92 @@
 # Tools
 
-This directory contains utility scripts for the ModernBERT project.
+Utility scripts for the ModernBERT project.
 
 ## merge_mds_subsets.py
 
-Merge multiple MDS subset folders into unified train/val/train_small splits.
+Merge multiple MDS datasets into unified train/val/train_small splits with automatic download from Hugging Face.
 
-### Usage
+### Features
+
+- ✅ Auto-download from Hugging Face repositories
+- ✅ Merge from local directories
+- ✅ Automatic train/val/train_small splitting
+- ✅ Symlinks or file copying (auto-fallback on Windows)
+- ✅ Train_small-only mode for quick testing
+
+### Requirements
 
 ```bash
-python tools/merge_mds_subsets.py \
-  --source_dir ./source_data \
-  --output_dir ./data \
-  --datasets FineWeb2-vie-mds FineWiki-mds
+pip install tqdm huggingface_hub
 ```
 
-### Arguments
+### Usage Examples
 
-- `--source_dir`: Source directory containing dataset folders
-- `--output_dir`: Output directory for merged splits (e.g., ./data)
-- `--datasets`: List of dataset folder names to merge
-- `--train_ratio`: Ratio of data for training (default: 0.9)
-- `--val_ratio`: Ratio of data for validation (default: 0.1)
-- `--train_small_ratio`: Ratio of train data for train_small split (default: 0.05)
-- `--seed`: Random seed for reproducible splits (default: 42)
-- `--no-symlinks`: Copy files instead of creating symlinks
-- `--only-train-small`: Only create train_small split without train/val (uses train_small_ratio from all data)
-
-### Example
-
-Merge FineWeb2-vie-mds and FineWiki-mds datasets:
+**1. Download and merge from Hugging Face:**
 
 ```bash
 python tools/merge_mds_subsets.py \
-  --source_dir ./source_data \
+  --hf_repos QuangDuy/FineWiki-mds QuangDuy/FineWeb2-vie-mds \
   --output_dir ./data \
-  --datasets FineWeb2-vie-mds FineWiki-mds \
   --train_ratio 0.9 \
   --val_ratio 0.1 \
   --train_small_ratio 0.05
 ```
 
-This will create:
-- `./data/train/` - 90% of data for training
-- `./data/val/` - 10% of data for validation
-- `./data/train_small/` - 5% of train data for quick testing
-
-### Only create train_small (for quick testing)
-
-If you only want to create a small dataset for testing:
+**2. Merge from local directories:**
 
 ```bash
 python tools/merge_mds_subsets.py \
   --source_dir ./source_data \
-  --output_dir ./data \
   --datasets FineWeb2-vie-mds FineWiki-mds \
-  --train_small_ratio 0.05 \
-  --only-train-small
+  --output_dir ./data
 ```
 
-This will create only:
-- `./data/train_small/` - 5% of all data (no train or val folders)
+**3. Quick test dataset (train_small only):**
+
+```bash
+python tools/merge_mds_subsets.py \
+  --hf_repos QuangDuy/FineWiki-mds \
+  --output_dir ./data \
+  --only-train-small \
+  --train_small_ratio 0.01
+```
+
+### Key Arguments
+
+- `--hf_repos`: Hugging Face repository IDs to download
+- `--source_dir`: Local directory containing datasets
+- `--datasets`: Dataset folder names to merge (for local mode)
+- `--output_dir`: Output directory for merged data
+- `--train_ratio`: Training data ratio (default: 0.9)
+- `--val_ratio`: Validation data ratio (default: 0.1)
+- `--train_small_ratio`: Train_small ratio (default: 0.05)
+- `--hf_token`: Hugging Face token for private repos
+- `--hf_cache_dir`: Custom cache directory
+- `--no-symlinks`: Copy files instead of symlinks
+- `--only-train-small`: Create only train_small split
+- `--seed`: Random seed for reproducibility (default: 42)
+
+### Output Structure
+
+```
+output_dir/
+├── train/          # Training split
+│   ├── index.json
+│   └── shard.*.mds
+├── val/            # Validation split
+│   ├── index.json
+│   └── shard.*.mds
+└── train_small/    # Quick testing split
+    ├── index.json
+    └── shard.*.mds
+```
+
+### Troubleshooting
+
+- **Windows symlink errors**: Script auto-fallbacks to copy mode or use `--no-symlinks`
+- **Private repos**: Use `--hf_token` with token from https://huggingface.co/settings/tokens
+- **Ratio errors**: Ensure `train_ratio + val_ratio = 1.0`
 
 ## count_params.py
 
