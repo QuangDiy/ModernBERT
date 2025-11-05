@@ -81,11 +81,11 @@ python .\tools\count_params.py --dir yamls\main --pattern flex-bert-vi-base.coun
 
 ```powershell
 # For flex-bert-base
-(Get-Content yamls\main\flex-bert-base.yaml) `
+(Get-Content yamls\main\flex-bert-vi-base.yaml) `
   -replace 'sliding_window:\s*\d+', 'sliding_window: -1' `
   -replace 'global_attn_every_n_layers:\s*\d+', 'global_attn_every_n_layers: -1' `
   -replace 'loss_function:\s*fa_cross_entropy', 'loss_function: cross_entropy' `
-| Set-Content yamls\main\flex-bert-base.count.yaml
+| Set-Content yamls\main\flex-bert-vi-base.count.yaml
 
-python .\tools\count_params.py --dir yamls\main --pattern flex-bert-base.count.yaml --tokenizer tokenizer\huit-bert --summary
+python .\tools\count_params.py --dir yamls\main --pattern flex-bert-vi-base.count.yaml --tokenizer tokenizer\huit-bert --summary
 ```

@@ -10,9 +10,8 @@ from transformers import AutoTokenizer
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from src.bert_layers.configuration_bert import FlexBertConfig  # noqa: E402
-from main import build_model  # noqa: E402
-
+from src.bert_layers.configuration_bert import FlexBertConfig
+from main import build_model 
 
 def count_params(model: torch.nn.Module, trainable_only: bool = False) -> int:
     if trainable_only:
@@ -30,7 +29,6 @@ def load_cfg(defaults_path: Path, yaml_path: Path):
 
 
 def format_count(n: int) -> str:
-    # human friendly
     if n >= 1_000_000_000:
         return f"{n/1_000_000_000:.3f}B"
     if n >= 1_000_000:
@@ -92,7 +90,6 @@ def main():
         try:
             cfg = load_cfg(defaults_path, yaml_path)
 
-            # Optionally align vocab size with provided tokenizer
             target_vocab = None
             if args.tokenizer and args.respect_tokenizer:
                 try:
@@ -101,11 +98,8 @@ def main():
                     if args.pad_multiple and args.pad_multiple > 1:
                         pm = args.pad_multiple
                         target_vocab = target_vocab + ((-target_vocab) % pm)
-                    # allow writing into the OmegaConf tree
                     om.set_struct(cfg, False)
-                    # Always pass tokenizer_name for consistency
                     cfg.model.tokenizer_name = args.tokenizer
-                    # Only override vocab_size for flex_bert
                     if getattr(cfg.model, "name", None) == "flex_bert":
                         if "model_config" not in cfg.model:
                             cfg.model.model_config = {}
@@ -117,7 +111,6 @@ def main():
 
             model = build_model(cfg.model)
 
-            # Safety: enforce embedding size to target vocab if it differs
             used_vocab = None
             try:
                 emb = model.model.get_input_embeddings()
@@ -132,20 +125,14 @@ def main():
             n_total = count_params(model, trainable_only=False)
             n_train = count_params(model, trainable_only=True)
 
-            # Compute embedding-related params to derive non-embedding params
             token_emb_params = None
             head_vocab_params = None
             non_embed_params = None
             try:
-                # Expect HuggingFaceModel wrapper
                 core = getattr(model, "model", model)
-                # Token embeddings
                 tok_emb = core.bert.embeddings.tok_embeddings
                 token_emb_params = tok_emb.weight.numel()
 
-                # Decoder/head params that scale with vocab
-                # If weights are tied, decoder.weight is the same param as tok_embeddings.weight
-                # Only subtract separate head weights when not tied
                 tie = getattr(core.config, "tie_word_embeddings", True)
                 dec = core.get_output_embeddings() if hasattr(core, "get_output_embeddings") else None
                 if dec is not None:
@@ -172,7 +159,6 @@ def main():
                 )
             )
 
-            # Build summary row
             try:
                 core = getattr(model, "model", model)
                 hidden_dim = getattr(core.config, "hidden_size", None)
@@ -195,7 +181,6 @@ def main():
         except Exception as e:
             print(f"[ERROR] {yaml_path.name}: {e}")
 
-    # Summary print (optional)
     if len(summary_rows) > 0 and args.summary:
         name_w = max((len(r[0]) for r in summary_rows), default=10)
 
@@ -216,7 +201,6 @@ def main():
                 f"{name.ljust(name_w)}  {fmt_model_size(n_total):>10}  {str(hidden_dim):>10}  {str(num_layers):>10}  {str(vocab_eff):>10}  {str(ctx_len):>7}  {task}"
             )
 
-    # Detailed pretty print
     name_w = max((len(r[0]) for r in rows), default=10)
     header = f"{'config'.ljust(name_w)}  total_params  trainable_params  vocab_used  token_emb  head_vocab  non_embed"
     print(header)
@@ -233,6 +217,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 # python .\tools\count_params.py --dir yamls\main --pattern flex-bert-vi-base.yaml --tokenizer tokenizer\huit-bert
