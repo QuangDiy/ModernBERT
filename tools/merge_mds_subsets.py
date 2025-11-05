@@ -6,6 +6,7 @@ This script takes multiple MDS datasets with subset folders and merges them into
 a single dataset with proper train/val/train_small splits.
 
 Usage:
+    # From local directories
     python tools/merge_mds_subsets.py \
         --source_dir ./source_data \
         --output_dir ./data \
@@ -13,6 +14,14 @@ Usage:
         --val_ratio 0.1 \
         --train_small_ratio 0.05 \
         --datasets FineWeb2-vie-mds FineWiki-mds
+    
+    # Download from Hugging Face and merge
+    python tools/merge_mds_subsets.py \
+        --hf_repos QuangDuy/FineWiki-mds QuangDuy/FineWeb2-vie-mds \
+        --output_dir ./data \
+        --train_ratio 0.9 \
+        --val_ratio 0.1 \
+        --train_small_ratio 0.05
 """
 
 import argparse
@@ -21,9 +30,44 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import random
 from tqdm import tqdm
+
+
+def download_from_huggingface(repo_id: str, cache_dir: Optional[Path] = None, 
+                               token: Optional[str] = None) -> Path:
+    """
+    Download MDS dataset from Hugging Face repository.
+    
+    Args:
+        repo_id: Hugging Face repository ID (e.g., 'QuangDuy/FineWiki-mds')
+        cache_dir: Optional cache directory for downloads (default: ~/.cache/huggingface)
+        token: Optional Hugging Face API token for private repos
+        
+    Returns:
+        Path to the downloaded dataset directory
+    """
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        raise ImportError(
+            "huggingface_hub is required to download from Hugging Face. "
+            "Install it with: pip install huggingface_hub"
+        )
+    
+    print(f"Downloading {repo_id} from Hugging Face...")
+    
+    local_path = snapshot_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        cache_dir=str(cache_dir) if cache_dir else None,
+        token=token,
+        resume_download=True,
+    )
+    
+    print(f"  Downloaded to: {local_path}")
+    return Path(local_path)
 
 
 def discover_subset_folders(dataset_path: Path) -> List[Path]:
@@ -112,8 +156,7 @@ def split_shards(all_shards: List[Dict], train_ratio: float, val_ratio: float,
     train_shards = shuffled_shards[:train_count]
     val_shards = shuffled_shards[train_count:]
     
-    # Create train_small from a subset of train
-    train_small_count = int(len(train_shards) * train_small_ratio)
+    train_small_count = max(1, int(len(train_shards) * train_small_ratio)) if train_shards else 0
     train_small_shards = train_shards[:train_small_count]
     
     return train_shards, val_shards, train_small_shards
@@ -128,55 +171,68 @@ def create_merged_split(output_split_dir: Path, shards: List[Dict], use_symlinks
         shards: List of shard info dictionaries to include
         use_symlinks: Whether to use symlinks (True) or copy files (False)
     """
+    if not shards:
+        print(f"  Warning: No shards to create split at {output_split_dir}")
+        return
+    
     output_split_dir.mkdir(parents=True, exist_ok=True)
     
-    # Prepare merged index data
     merged_shards = []
+    
+    symlink_failed = False
     
     print(f"  Processing {len(shards)} shards...")
     for idx, shard_info in enumerate(tqdm(shards, desc="  Creating shard references")):
         subset_folder = shard_info['subset_folder']
         shard_data = shard_info['shard_data']
         
-        # Create new shard entry with updated paths
         new_shard = shard_data.copy()
         
-        # Handle raw data file
         if 'raw_data' in shard_data and shard_data['raw_data']:
             raw_basename = shard_data['raw_data'].get('basename', '')
             if raw_basename:
                 source_file = subset_folder / raw_basename
                 if source_file.exists():
                     dest_file = output_split_dir / f"shard.{idx:05d}.mds"
-                    if use_symlinks:
-                        if dest_file.exists() or dest_file.is_symlink():
-                            dest_file.unlink()
-                        dest_file.symlink_to(source_file.absolute())
+                    if use_symlinks and not symlink_failed:
+                        try:
+                            if dest_file.exists() or dest_file.is_symlink():
+                                dest_file.unlink()
+                            dest_file.symlink_to(source_file.absolute())
+                        except (OSError, NotImplementedError) as e:
+                            if idx == 0: 
+                                print(f"\n  Warning: Symlinks not available ({e})")
+                                print(f"  Falling back to copying files...")
+                            symlink_failed = True
+                            shutil.copy2(source_file, dest_file)
                     else:
                         shutil.copy2(source_file, dest_file)
                     new_shard['raw_data']['basename'] = dest_file.name
         
-        # Handle compressed data file
         if 'zip_data' in shard_data and shard_data['zip_data']:
             zip_basename = shard_data['zip_data'].get('basename', '')
             if zip_basename:
                 source_file = subset_folder / zip_basename
                 if source_file.exists():
-                    # Determine extension from source file
-                    ext = ''.join(source_file.suffixes)  # e.g., .mds.zstd
+                    ext = ''.join(source_file.suffixes) 
                     dest_file = output_split_dir / f"shard.{idx:05d}{ext}"
-                    if use_symlinks:
-                        if dest_file.exists() or dest_file.is_symlink():
-                            dest_file.unlink()
-                        dest_file.symlink_to(source_file.absolute())
+                    if use_symlinks and not symlink_failed:
+                        try:
+                            if dest_file.exists() or dest_file.is_symlink():
+                                dest_file.unlink()
+                            dest_file.symlink_to(source_file.absolute())
+                        except (OSError, NotImplementedError) as e:
+                            if idx == 0:  
+                                print(f"\n  Warning: Symlinks not available ({e})")
+                                print(f"  Falling back to copying files...")
+                            symlink_failed = True
+                            shutil.copy2(source_file, dest_file)
                     else:
                         shutil.copy2(source_file, dest_file)
                     new_shard['zip_data']['basename'] = dest_file.name
         
         merged_shards.append(new_shard)
     
-    # Create merged index.json
-    # Use the structure from the first shard's parent index as template
     first_subset = shards[0]['subset_folder']
     template_index = load_index_file(first_subset / "index.json")
     
@@ -185,12 +241,10 @@ def create_merged_split(output_split_dir: Path, shards: List[Dict], use_symlinks
         'shards': merged_shards,
     }
     
-    # Add any other fields from template
     for key in template_index:
         if key not in merged_index:
             merged_index[key] = template_index[key]
     
-    # Write merged index
     index_path = output_split_dir / "index.json"
     with open(index_path, 'w') as f:
         json.dump(merged_index, f, indent=2)
@@ -202,12 +256,20 @@ def main():
     parser = argparse.ArgumentParser(
         description="Merge multiple MDS subset folders into unified train/val/train_small splits"
     )
-    parser.add_argument(
+    
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
         '--source_dir',
         type=str,
-        required=True,
         help='Source directory containing dataset folders (e.g., ./source_data)'
     )
+    source_group.add_argument(
+        '--hf_repos',
+        type=str,
+        nargs='+',
+        help='Hugging Face repository IDs to download (e.g., QuangDuy/FineWiki-mds QuangDuy/FineWeb2-vie-mds)'
+    )
+    
     parser.add_argument(
         '--output_dir',
         type=str,
@@ -218,8 +280,19 @@ def main():
         '--datasets',
         type=str,
         nargs='+',
-        required=True,
-        help='List of dataset folder names to merge (e.g., FineWeb2-vie-mds FineWiki-mds)'
+        help='List of dataset folder names to merge (required when using --source_dir)'
+    )
+    parser.add_argument(
+        '--hf_cache_dir',
+        type=str,
+        default=None,
+        help='Cache directory for Hugging Face downloads (default: ~/.cache/huggingface)'
+    )
+    parser.add_argument(
+        '--hf_token',
+        type=str,
+        default=None,
+        help='Hugging Face API token for private repositories'
     )
     parser.add_argument(
         '--train_ratio',
@@ -258,7 +331,9 @@ def main():
     
     args = parser.parse_args()
     
-    # Validate ratios
+    if args.source_dir and not args.datasets:
+        parser.error("--datasets is required when using --source_dir")
+    
     if not args.only_train_small:
         if abs(args.train_ratio + args.val_ratio - 1.0) > 0.001:
             parser.error(f"train_ratio ({args.train_ratio}) + val_ratio ({args.val_ratio}) must equal 1.0")
@@ -266,14 +341,53 @@ def main():
     if args.train_small_ratio > 1.0 or args.train_small_ratio <= 0:
         parser.error(f"train_small_ratio must be between 0 and 1.0")
     
-    source_dir = Path(args.source_dir)
     output_dir = Path(args.output_dir)
     
-    if not source_dir.exists():
-        parser.error(f"Source directory {source_dir} does not exist")
+    dataset_paths = []
     
-    print(f"Merging MDS datasets from {source_dir} to {output_dir}")
-    print(f"Datasets: {', '.join(args.datasets)}")
+    if args.hf_repos:
+        print("="*60)
+        print("Downloading datasets from Hugging Face")
+        print("="*60)
+        
+        cache_dir = Path(args.hf_cache_dir) if args.hf_cache_dir else None
+        
+        for repo_id in args.hf_repos:
+            try:
+                dataset_path = download_from_huggingface(
+                    repo_id=repo_id,
+                    cache_dir=cache_dir,
+                    token=args.hf_token
+                )
+                dataset_paths.append(dataset_path)
+                print(f"✓ Successfully downloaded {repo_id}")
+            except Exception as e:
+                print(f"✗ Failed to download {repo_id}: {e}")
+                return 1
+        
+        print()
+    else:
+        source_dir = Path(args.source_dir)
+        if not source_dir.exists():
+            parser.error(f"Source directory {source_dir} does not exist")
+        
+        for dataset_name in args.datasets:
+            dataset_path = source_dir / dataset_name
+            if not dataset_path.exists():
+                print(f"Warning: Dataset path {dataset_path} does not exist, skipping")
+                continue
+            dataset_paths.append(dataset_path)
+    
+    if not dataset_paths:
+        print("Error: No valid dataset paths found")
+        return 1
+    
+    print("="*60)
+    print(f"Merging MDS datasets to {output_dir}")
+    print("="*60)
+    print("="*60)
+    print(f"Merging MDS datasets to {output_dir}")
+    print("="*60)
     
     if args.only_train_small:
         print(f"Mode: Only creating train_small split ({args.train_small_ratio * 100}% of all data)")
@@ -283,10 +397,9 @@ def main():
     print(f"Random seed: {args.seed}")
     print()
     
-    # Discover all subset folders across all datasets
     all_shards = []
-    for dataset_name in args.datasets:
-        dataset_path = source_dir / dataset_name
+    for dataset_path in dataset_paths:
+        dataset_name = dataset_path.name
         print(f"Processing dataset: {dataset_name}")
         
         subset_folders = discover_subset_folders(dataset_path)
@@ -307,13 +420,12 @@ def main():
     use_symlinks = not args.no_symlinks
     
     if args.only_train_small:
-        # Only create train_small from all data
         print(f"Creating train_small split from all data...")
         random.seed(args.seed)
         shuffled_shards = all_shards.copy()
         random.shuffle(shuffled_shards)
         
-        train_small_count = int(len(shuffled_shards) * args.train_small_ratio)
+        train_small_count = max(1, int(len(shuffled_shards) * args.train_small_ratio)) if shuffled_shards else 0
         train_small_shards = shuffled_shards[:train_small_count]
         
         print(f"  Train_small: {len(train_small_shards)} shards ({sum(s['samples'] for s in train_small_shards):,} samples)")
@@ -330,7 +442,6 @@ def main():
         print(f"  data_local: {output_dir}")
         print("  split: train_small")
     else:
-        # Create all splits (train, val, train_small)
         print("Splitting shards into train/val/train_small...")
         train_shards, val_shards, train_small_shards = split_shards(
             all_shards,
@@ -347,15 +458,12 @@ def main():
         
         print(f"Creating merged splits ({'symlinks' if use_symlinks else 'copying files'})...")
         
-        # Create train split
         print("\nCreating train split...")
         create_merged_split(output_dir / "train", train_shards, use_symlinks)
         
-        # Create val split
         print("\nCreating val split...")
         create_merged_split(output_dir / "val", val_shards, use_symlinks)
         
-        # Create train_small split
         print("\nCreating train_small split...")
         create_merged_split(output_dir / "train_small", train_small_shards, use_symlinks)
         
@@ -368,8 +476,9 @@ def main():
         print("  train split: train")
         print("  eval split: val")
         print("  quick test split: train_small")
+    
+    return 0
 
 
 if __name__ == "__main__":
-    main()
-
+    exit(main())
