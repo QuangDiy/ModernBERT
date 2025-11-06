@@ -7,8 +7,13 @@
 import os
 import sys
 import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, cast
+
+# Load environment variables from .env file (if it exists)
+from dotenv import load_dotenv
+load_dotenv()
 
 import torch
 from torch import nn
@@ -41,6 +46,7 @@ import src.mosaic_bert as mosaic_bert_module
 import src.text_data as text_data_module
 from src.algorithms.rope_schedule import FlexBertRopeSchedule
 from src.callbacks.dataloader_speed import DataloaderSpeedMonitor
+from src.callbacks.huggingface_hub import HuggingFaceHubUploader
 from src.callbacks.log_grad_norm import LogGradNorm
 from src.callbacks.packing_efficiency import PackingEfficency
 from src.callbacks.scheduled_gc import ScheduledGarbageCollector
@@ -174,6 +180,16 @@ def build_callback(name, kwargs):
         return DataloaderSpeedMonitor()
     elif name == "packing_efficiency":
         return PackingEfficency(log_interval=kwargs.get("log_interval", 10))
+    elif name == "huggingface_hub":
+        return HuggingFaceHubUploader(
+            repo_id=kwargs.get("repo_id", None),
+            upload_interval=kwargs.get("upload_interval", "3500ba"),
+            token=kwargs.get("token", None),
+            private=kwargs.get("private", False),
+            create_repo_if_missing=kwargs.get("create_repo_if_missing", True),
+            upload_latest_only=kwargs.get("upload_latest_only", False),
+            rank_zero_only=kwargs.get("rank_zero_only", True),
+        )
     else:
         raise ValueError(f"Not sure how to build callback: {name}")
 
@@ -406,14 +422,30 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
     else:
         eval_evaluator = None
 
+    # Set up run name with timestamp FIRST (before building loggers)
+    if cfg.get("run_name") is None:
+        cfg.run_name = os.environ.get("COMPOSER_RUN_NAME", "bert")
+
+    # Add timestamp prefix to run name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    cfg.run_name = f"{timestamp}-{cfg.run_name}"
+
     # Optimizer
     optimizer = build_optimizer(cfg.optimizer, model)
 
     # Scheduler
     scheduler = build_scheduler(cfg.scheduler)
 
-    # Loggers
-    loggers = [build_logger(name, logger_cfg) for name, logger_cfg in cfg.get("loggers", {}).items()]
+    # Loggers (built after run_name is set so WandB can use the timestamped name)
+    loggers = []
+    for name, logger_cfg in cfg.get("loggers", {}).items():
+        if name == "wandb":
+            # Pass the run name to WandB
+            logger_cfg_with_name = dict(logger_cfg)
+            logger_cfg_with_name["name"] = cfg.run_name
+        else:
+            logger_cfg_with_name = logger_cfg
+        loggers.append(build_logger(name, logger_cfg_with_name))
 
     # Callbacks
     callbacks = [build_callback(name, callback_cfg) for name, callback_cfg in cfg.get("callbacks", {}).items()]
@@ -428,9 +460,6 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
         )
 
     algorithms = [build_algorithm(name, algorithm_cfg) for name, algorithm_cfg in cfg.get("algorithms", {}).items()]
-
-    if cfg.get("run_name") is None:
-        cfg.run_name = os.environ.get("COMPOSER_RUN_NAME", "bert")
 
     # Build the Trainer
     trainer = Trainer(

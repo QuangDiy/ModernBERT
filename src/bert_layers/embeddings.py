@@ -149,7 +149,12 @@ class FlexBertAbsoluteEmbeddings(FlexBertEmbeddingsBase):
         position_ids: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
         if position_ids is None:
-            position_ids = self.position_ids[:, 0 : input_ids.shape[1]]
+            # Handle both padded (2D) and unpadded (1D) inputs
+            seq_len = input_ids.shape[1] if input_ids.dim() > 1 else input_ids.shape[0]
+            position_ids = self.position_ids[:, 0 : seq_len]
+            # For unpadded inputs (1D), squeeze position_ids to match input dimensionality
+            if input_ids.dim() == 1:
+                position_ids = position_ids.squeeze(0)
 
         embeddings = self.tok_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)

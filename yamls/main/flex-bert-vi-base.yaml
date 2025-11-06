@@ -7,7 +7,7 @@ data_local: ./data
 data_remote: # If blank, files must be present in data_local
 
 max_seq_len: 1024
-tokenizer_name: tokenizer/huit-bert # switch to bert tokenizer until we add [MASK] token to the llama tokenizer meta-llama/Llama-2-7b-hf
+tokenizer_name: tokenizer/HUIT-BERT # switch to bert tokenizer until we add [MASK] token to the llama tokenizer meta-llama/Llama-2-7b-hf
 mlm_probability: 0.3 # FlexBERT should use 30% masking for optimal performance
 
 # Run Name
@@ -35,7 +35,7 @@ model:
     embed_dropout_prob: 0.0
     embed_norm: false
     final_norm: true
-    embedding_layer: absolute_pos
+    embedding_layer: sans_pos
     loss_function: fa_cross_entropy
     loss_kwargs:
       reduction: mean
@@ -70,7 +70,8 @@ train_loader:
   dataset:
     local: ${data_local}
     remote: ${data_remote}
-    split: train
+    split: train_small
+    streaming: true # Use StreamingTextDataset to handle compressed data
     tokenizer_name: ${tokenizer_name}
     max_seq_len: ${max_seq_len}
     shuffle: true
@@ -83,7 +84,8 @@ eval_loader:
   dataset:
     local: ${data_local}
     remote: ${data_remote}
-    split: val
+    split: train_small
+    streaming: true # Use StreamingTextDataset to handle compressed data
     tokenizer_name: ${tokenizer_name}
     max_seq_len: ${max_seq_len}
     shuffle: false
@@ -111,16 +113,16 @@ optimizer:
 
 max_duration: 286720000sp # Subsample the training data for ~275M samples
 eval_interval: 2000ba
-global_train_batch_size: 4096
+global_train_batch_size: 512 # default is 4096
 
 # System
 seed: 17
-device_train_microbatch_size: 128
+device_train_microbatch_size: 16 # default is 128
 # device_train_microbatch_size: auto
 precision: amp_bf16
 
-global_eval_batch_size: 256
-device_eval_microbatch_size: 64
+global_eval_batch_size: 256 # default is 256
+device_eval_microbatch_size: 16 # default is 64
 
 # Logging
 progress_bar: false
@@ -131,22 +133,48 @@ callbacks:
   speed_monitor:
     window_size: 500
   lr_monitor: {}
+  # Log gradient norms (requires StableAdamW optimizer)
+  # log_grad_norm:
+  #   log_optimizer_metrics: true
+  #   batch_log_interval: 10
+  # Log dataloader throughput
+  dataloader_speed: {}
+  # Log sequence packing efficiency (if using sequence packing)
+  # packing_efficiency:
+  #   log_interval: 10
+  # Upload checkpoints to Hugging Face Hub periodically
+  # Configure via HF_TOKEN and HF_REPO_ID environment variables
+  huggingface_hub:
+    repo_id: ${oc.env:HF_REPO_ID}  # Format: username/model-name
+    upload_interval: 3500ba  # Upload every 3500 batches (matches save_interval)
+    private: false  # Set to true for private repository
+    create_repo_if_missing: true
+    upload_latest_only: false  # Set to true to only keep latest checkpoint in repo
 
 algorithms:
   gradient_clipping:
     clipping_type: norm
     clipping_threshold: 1.0
 
-# (Optional) W&B logging
-# loggers:
-#   wandb:
-#     project:      # Fill this in
-#     entity:      # Fill this in
+# W&B logging - configure via environment variables (WANDB_PROJECT, WANDB_ENTITY, WANDB_API_KEY)
+loggers:
+  wandb:
+    project: ${oc.env:WANDB_PROJECT}
+    entity: ${oc.env:WANDB_ENTITY}
+    # Log code and system metrics
+    init_kwargs:
+      settings:
+        code_dir: "."
+      # Log model architecture, hyperparameters, gradients, and parameters
+      config:
+        log_code: true
+      # Note: The 'watch' parameter is not supported in init_kwargs.
+      # If you need to watch model parameters/gradients, use wandb.watch() separately after initialization.
 
-# (Optional) Checkpoint to local filesystem or remote object store
-# save_interval: 3500ba
-# save_num_checkpoints_to_keep: 1  # Important, this cleans up checkpoints saved to DISK
-# save_folder:      # e.g. './{run_name}/ckpt' (local) or 's3://mybucket/mydir/{run_name}/ckpt' (remote)
+# Checkpoint to local filesystem or remote object store
+save_interval: 3500ba
+save_num_checkpoints_to_keep: 1  # Important, this cleans up checkpoints saved to DISK
+save_folder: './{run_name}/ckpt'  # Local checkpoint directory
 
 # (Optional) Load from local filesystem or remote object store to
 # start from an existing model checkpoint;

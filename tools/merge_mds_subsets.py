@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import random
 from tqdm import tqdm
+from streaming.base.compression import decompress
 
 
 def download_from_huggingface(repo_id: str, cache_dir: Optional[Path] = None, 
@@ -162,14 +163,37 @@ def split_shards(all_shards: List[Dict], train_ratio: float, val_ratio: float,
     return train_shards, val_shards, train_small_shards
 
 
-def create_merged_split(output_split_dir: Path, shards: List[Dict], use_symlinks: bool = True):
+def decompress_shard_file(source_file: Path, dest_file: Path, compression: str):
+    """
+    Decompress a shard file from source to destination.
+
+    Args:
+        source_file: Path to compressed source file
+        dest_file: Path to uncompressed destination file
+        compression: Compression type (e.g., 'zstd')
+    """
+    with open(source_file, 'rb') as f:
+        compressed_data = f.read()
+
+    decompressed_data = decompress(compression, compressed_data)
+
+    # Write atomically with a temporary file
+    tmp_file = dest_file.with_suffix(dest_file.suffix + '.tmp')
+    with open(tmp_file, 'wb') as f:
+        f.write(decompressed_data)
+    tmp_file.rename(dest_file)
+
+
+def create_merged_split(output_split_dir: Path, shards: List[Dict], use_symlinks: bool = True,
+                       decompress_shards: bool = False):
     """
     Create a merged split directory with index.json and shard references.
-    
+
     Args:
         output_split_dir: Path to output split directory (e.g., ./data/train)
         shards: List of shard info dictionaries to include
         use_symlinks: Whether to use symlinks (True) or copy files (False)
+        decompress_shards: Whether to decompress shards to create raw_data (False = keep compressed)
     """
     if not shards:
         print(f"  Warning: No shards to create split at {output_split_dir}")
@@ -186,8 +210,23 @@ def create_merged_split(output_split_dir: Path, shards: List[Dict], use_symlinks
         subset_folder = shard_info['subset_folder']
         shard_data = shard_info['shard_data']
         
-        new_shard = shard_data.copy()
-        
+        # Create a deep copy to avoid modifying nested dicts
+        new_shard = {
+            'column_encodings': shard_data.get('column_encodings', []),
+            'column_names': shard_data.get('column_names', []),
+            'column_sizes': shard_data.get('column_sizes', []),
+            'compression': shard_data.get('compression', 'zstd'),
+            'format': shard_data.get('format', 'mds'),
+            'hashes': shard_data.get('hashes', []),
+            'samples': shard_data.get('samples', 0),
+            'size_limit': shard_data.get('size_limit', 67108864),
+            'version': shard_data.get('version', 2),
+            # Initialize both raw_data and zip_data to None - streaming library requires both keys
+            'raw_data': None,
+            'zip_data': None,
+        }
+
+        # Process raw_data if it exists
         if 'raw_data' in shard_data and shard_data['raw_data']:
             raw_basename = shard_data['raw_data'].get('basename', '')
             if raw_basename:
@@ -200,36 +239,73 @@ def create_merged_split(output_split_dir: Path, shards: List[Dict], use_symlinks
                                 dest_file.unlink()
                             dest_file.symlink_to(source_file.absolute())
                         except (OSError, NotImplementedError) as e:
-                            if idx == 0: 
+                            if idx == 0:
                                 print(f"\n  Warning: Symlinks not available ({e})")
                                 print(f"  Falling back to copying files...")
                             symlink_failed = True
                             shutil.copy2(source_file, dest_file)
                     else:
                         shutil.copy2(source_file, dest_file)
-                    new_shard['raw_data']['basename'] = dest_file.name
-        
+                    # Update to use the new sequential filename
+                    new_shard['raw_data'] = {
+                        'basename': dest_file.name,
+                        'bytes': shard_data['raw_data'].get('bytes', 0),
+                        'hashes': shard_data['raw_data'].get('hashes', {})
+                    }
+                    # If we have raw_data and it's uncompressed, set compression to null
+                    if not decompress_shards and shard_data.get('compression') in [None, 'zstd']:
+                        # Check if this was originally uncompressed data
+                        if 'zip_data' not in shard_data or not shard_data['zip_data']:
+                            new_shard['compression'] = None
+
+        # Process zip_data if it exists
         if 'zip_data' in shard_data and shard_data['zip_data']:
             zip_basename = shard_data['zip_data'].get('basename', '')
             if zip_basename:
                 source_file = subset_folder / zip_basename
                 if source_file.exists():
-                    ext = ''.join(source_file.suffixes) 
-                    dest_file = output_split_dir / f"shard.{idx:05d}{ext}"
-                    if use_symlinks and not symlink_failed:
-                        try:
-                            if dest_file.exists() or dest_file.is_symlink():
-                                dest_file.unlink()
-                            dest_file.symlink_to(source_file.absolute())
-                        except (OSError, NotImplementedError) as e:
-                            if idx == 0:  
-                                print(f"\n  Warning: Symlinks not available ({e})")
-                                print(f"  Falling back to copying files...")
-                            symlink_failed = True
-                            shutil.copy2(source_file, dest_file)
+                    if decompress_shards:
+                        # Decompress the shard to create raw_data
+                        dest_file = output_split_dir / f"shard.{idx:05d}.mds"
+                        compression = shard_data.get('compression', 'zstd')
+                        decompress_shard_file(source_file, dest_file, compression)
+
+                        # Add raw_data entry instead of zip_data
+                        new_shard['raw_data'] = {
+                            'basename': dest_file.name,
+                            'bytes': dest_file.stat().st_size,
+                            'hashes': {}
+                        }
+                        # Set compression to null since we decompressed
+                        new_shard['compression'] = None
                     else:
-                        shutil.copy2(source_file, dest_file)
-                    new_shard['zip_data']['basename'] = dest_file.name
+                        # Keep compressed format - copy the zip file and preserve metadata
+                        ext = ''.join(source_file.suffixes)
+                        dest_file = output_split_dir / f"shard.{idx:05d}{ext}"
+
+                        if use_symlinks and not symlink_failed:
+                            try:
+                                if dest_file.exists() or dest_file.is_symlink():
+                                    dest_file.unlink()
+                                dest_file.symlink_to(source_file.absolute())
+                            except (OSError, NotImplementedError) as e:
+                                if idx == 0:
+                                    print(f"\n  Warning: Symlinks not available ({e})")
+                                    print(f"  Falling back to copying files...")
+                                symlink_failed = True
+                                shutil.copy2(source_file, dest_file)
+                        else:
+                            shutil.copy2(source_file, dest_file)
+
+                        # For compressed data: only keep zip_data, set raw_data to None
+                        # The streaming library will use zip_data when raw_data doesn't exist
+                        # Update zip_data to use the new sequential filename
+                        new_shard['zip_data'] = {
+                            'basename': dest_file.name,
+                            'bytes': shard_data['zip_data'].get('bytes', 0),
+                            'hashes': shard_data['zip_data'].get('hashes', {})
+                        }
+                        # raw_data stays None (initialized at the top)
         
         merged_shards.append(new_shard)
     
@@ -322,6 +398,11 @@ def main():
         '--no-symlinks',
         action='store_true',
         help='Copy files instead of creating symlinks'
+    )
+    parser.add_argument(
+        '--decompress',
+        action='store_true',
+        help='Decompress shards to create raw_data (required for NoStreamingDataset with streaming: false)'
     )
     parser.add_argument(
         '--only-train-small',
@@ -431,8 +512,9 @@ def main():
         print(f"  Train_small: {len(train_small_shards)} shards ({sum(s['samples'] for s in train_small_shards):,} samples)")
         print()
         
-        print(f"Creating train_small split ({'symlinks' if use_symlinks else 'copying files'})...")
-        create_merged_split(output_dir / "train_small", train_small_shards, use_symlinks)
+        decompress_mode = " + decompressing" if args.decompress else ""
+        print(f"Creating train_small split ({'symlinks' if use_symlinks else 'copying files'}{decompress_mode})...")
+        create_merged_split(output_dir / "train_small", train_small_shards, use_symlinks, args.decompress)
         
         print("\n" + "="*60)
         print("✓ Merge complete!")
@@ -456,16 +538,17 @@ def main():
         print(f"  Train_small: {len(train_small_shards)} shards ({sum(s['samples'] for s in train_small_shards):,} samples)")
         print()
         
-        print(f"Creating merged splits ({'symlinks' if use_symlinks else 'copying files'})...")
-        
+        decompress_mode = " + decompressing" if args.decompress else ""
+        print(f"Creating merged splits ({'symlinks' if use_symlinks else 'copying files'}{decompress_mode})...")
+
         print("\nCreating train split...")
-        create_merged_split(output_dir / "train", train_shards, use_symlinks)
-        
+        create_merged_split(output_dir / "train", train_shards, use_symlinks, args.decompress)
+
         print("\nCreating val split...")
-        create_merged_split(output_dir / "val", val_shards, use_symlinks)
-        
+        create_merged_split(output_dir / "val", val_shards, use_symlinks, args.decompress)
+
         print("\nCreating train_small split...")
-        create_merged_split(output_dir / "train_small", train_small_shards, use_symlinks)
+        create_merged_split(output_dir / "train_small", train_small_shards, use_symlinks, args.decompress)
         
         print("\n" + "="*60)
         print("✓ Merge complete!")

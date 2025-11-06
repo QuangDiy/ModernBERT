@@ -170,3 +170,7 @@ wandb/
 
 # Data
 data/
+
+# Claude
+
+CLAUDE.md
