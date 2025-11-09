@@ -4,7 +4,15 @@ import os
 from transformers import AutoTokenizer
 
 
-def build_roberta_style_tokenizer(base_model: str, out_dir: str) -> None:
+def build_roberta_style_tokenizer(base_model: str, out_dir: str, add_prefix_space: bool = True) -> None:
+    """
+    Build a RoBERTa-style tokenizer from a base model.
+    
+    Args:
+        base_model: Base tokenizer/model repo id or local path
+        out_dir: Output directory to save the prepared tokenizer
+        add_prefix_space: Whether to add prefix space.
+    """
     tokenizer = AutoTokenizer.from_pretrained(base_model, use_fast=True, trust_remote_code=True)
 
     special_tokens = {
@@ -44,6 +52,12 @@ def build_roberta_style_tokenizer(base_model: str, out_dir: str) -> None:
 
     tokenizer.padding_side = "right"
     tokenizer.truncation_side = "right"
+    
+    try:
+        tokenizer.add_prefix_space = add_prefix_space
+    except Exception:
+        pass
+    
     try:
         tokenizer.model_input_names = ["input_ids", "attention_mask"]
     except Exception:
@@ -60,10 +74,48 @@ def build_roberta_style_tokenizer(base_model: str, out_dir: str) -> None:
                 cfg = json.load(f)
         else:
             cfg = {}
+        
         cfg["model_input_names"] = ["input_ids", "attention_mask"]
         cfg["tokenizer_class"] = "PreTrainedTokenizerFast"
+        cfg["add_prefix_space"] = add_prefix_space
+        
+        cfg.pop("chat_template", None)
+        cfg.pop("use_default_system_prompt", None)
+        
+        chat_tokens = ["<<SYS>>", "<</SYS>>", "[INST]", "[/INST]"]
+        
+        if "additional_special_tokens" in cfg:
+            cfg["additional_special_tokens"] = [
+                token for token in cfg["additional_special_tokens"]
+                if token not in chat_tokens
+            ]
+        
+        if "added_tokens_decoder" in cfg:
+            keys_to_remove = []
+            for key, token_info in cfg["added_tokens_decoder"].items():
+                if isinstance(token_info, dict) and token_info.get("content") in chat_tokens:
+                    keys_to_remove.append(key)
+            for key in keys_to_remove:
+                cfg["added_tokens_decoder"].pop(key)
+        
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
+        
+        special_tokens_path = os.path.join(out_dir, "special_tokens_map.json")
+        if os.path.exists(special_tokens_path):
+            with open(special_tokens_path, "r", encoding="utf-8") as f:
+                special_tokens_map = json.load(f)
+            
+            if "additional_special_tokens" in special_tokens_map:
+                if isinstance(special_tokens_map["additional_special_tokens"], list):
+                    special_tokens_map["additional_special_tokens"] = [
+                        token for token in special_tokens_map["additional_special_tokens"]
+                        if (isinstance(token, str) and token not in chat_tokens) or
+                           (isinstance(token, dict) and token.get("content") not in chat_tokens)
+                    ]
+            
+            with open(special_tokens_path, "w", encoding="utf-8") as f:
+                json.dump(special_tokens_map, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
@@ -80,6 +132,7 @@ def build_roberta_style_tokenizer(base_model: str, out_dir: str) -> None:
             "cls_token_id": tokenizer.cls_token_id,
             "sep_token": tokenizer.sep_token,
             "sep_token_id": tokenizer.sep_token_id,
+            "add_prefix_space": add_prefix_space,
             "model_input_names": ["input_ids", "attention_mask"],
         }
     )
@@ -105,6 +158,18 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("HF_TOKEN", ""),
         help="Hugging Face token to login (defaults to env HF_TOKEN if set)",
     )
+    parser.add_argument(
+        "--add-prefix-space",
+        action="store_true",
+        default=True,
+        help="Add prefix space to tokenizer (default: True). ",
+    )
+    parser.add_argument(
+        "--no-add-prefix-space",
+        dest="add_prefix_space",
+        action="store_false",
+        help="Disable add_prefix_space",
+    )
     return parser.parse_args()
 
 
@@ -117,4 +182,4 @@ if __name__ == "__main__":
             login(token=args.hf_token)
         except Exception:
             pass
-    build_roberta_style_tokenizer(args.base, args.out)
+    build_roberta_style_tokenizer(args.base, args.out, args.add_prefix_space)
