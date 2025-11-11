@@ -212,9 +212,9 @@ class StreamingTextDataset(StreamingDataset):
     def _read_binary_tokenized_sample(self, sample: BatchEncoding):
         seq_len = sample["len"] if "len" in sample else len(sample["input_ids"])
 
-        input_ids = np.frombuffer(sample["input_ids"], dtype=np.int64).copy()
+        input_ids = np.frombuffer(sample["input_ids"], dtype=np.uint16).copy()
         if "attention_mask" in sample:
-            attention_mask = np.frombuffer(sample["attention_mask"], dtype=np.int64).copy()
+            attention_mask = np.frombuffer(sample["attention_mask"], dtype=np.uint16).copy()
         else:
             attention_mask = np.ones_like(input_ids)
 

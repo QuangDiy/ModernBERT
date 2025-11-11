@@ -133,6 +133,7 @@ callbacks:
   speed_monitor:
     window_size: 500
   lr_monitor: {}
+  runtime_estimator: {}
   # Log gradient norms (requires StableAdamW optimizer)
   # log_grad_norm:
   #   log_optimizer_metrics: true

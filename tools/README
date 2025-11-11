@@ -26,8 +26,9 @@ pip install tqdm huggingface_hub
 
 ```bash
 python tools/merge_mds_subsets.py \
-  --hf_repos QuangDuy/FineWiki-mds QuangDuy/FineWeb2-vie-mds \
+  --hf_repos QuangDuy/FineWiki-mds-tokenized-1024 \
   --output_dir ./data \
+  ---decompress \
   --train_ratio 0.9 \
   --val_ratio 0.1 \
   --train_small_ratio 0.05
