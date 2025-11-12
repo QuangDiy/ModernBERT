@@ -7,7 +7,7 @@
 import os
 import sys
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, cast
 
@@ -427,7 +427,7 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
         cfg.run_name = os.environ.get("COMPOSER_RUN_NAME", "bert")
 
     # Add timestamp prefix to run name
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    timestamp = datetime.now(timezone(timedelta(hours=7))).strftime("%Y%m%d_%H%M")
     cfg.run_name = f"{timestamp}-{cfg.run_name}"
 
     # Optimizer
