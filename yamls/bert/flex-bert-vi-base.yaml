@@ -3,7 +3,7 @@
 
 # Vietnamese dataset merged from FineWeb2-vie-mds and FineWiki-mds
 # Use tools/merge_mds_subsets.py to prepare the data structure
-data_local: ./data
+data_local: ./data/merged-dataset-1024
 data_remote: # If blank, files must be present in data_local
 
 max_seq_len: 1024
@@ -111,7 +111,7 @@ optimizer:
 
 # algorithms:
 
-max_duration: 72000000sp # Subsample the training data for ~275M samples
+max_duration: 90000000sp # Subsample the training data for ~275M samples
 eval_interval: 2000ba
 global_train_batch_size: 512 # default is 4096
 
