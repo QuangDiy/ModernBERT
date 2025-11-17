@@ -8,3 +8,4 @@ triton==2.3.0
 numba==0.62.1
 python-dotenv==1.0.0
 huggingface-hub>=0.20.0
+torch-optimi==0.3.2
