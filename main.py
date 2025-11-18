@@ -4,6 +4,7 @@
 # Copyright 2022 MosaicML Examples authors
 # SPDX-License-Identifier: Apache-2.0
 
+import copy
 import os
 import sys
 import warnings
@@ -36,7 +37,7 @@ from composer.optim.scheduler import (
 )
 from composer.utils import dist, reproducibility
 from composer.utils.checkpoint import _ensure_valid_checkpoint
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf import OmegaConf as om
 from torch.optim import AdamW
 
@@ -437,14 +438,21 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
     scheduler = build_scheduler(cfg.scheduler)
 
     # Loggers (built after run_name is set so WandB can use the timestamped name)
+    def _to_plain_container(obj):
+        if isinstance(obj, (DictConfig, ListConfig)):
+            return om.to_container(obj, resolve=True)
+        return copy.deepcopy(obj)
+
     loggers = []
     for name, logger_cfg in cfg.get("loggers", {}).items():
+        logger_cfg_with_name = _to_plain_container(logger_cfg)
+        if logger_cfg_with_name is None:
+            logger_cfg_with_name = {}
+        if not isinstance(logger_cfg_with_name, dict):
+            raise ValueError(f"Logger config for '{name}' must resolve to a dict, got {type(logger_cfg_with_name)}")
         if name == "wandb":
-            # Pass the run name to WandB
-            logger_cfg_with_name = dict(logger_cfg)
+            logger_cfg_with_name = dict(logger_cfg_with_name or {})
             logger_cfg_with_name["name"] = cfg.run_name
-        else:
-            logger_cfg_with_name = logger_cfg
         loggers.append(build_logger(name, logger_cfg_with_name))
 
     # Callbacks

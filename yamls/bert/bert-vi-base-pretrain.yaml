@@ -17,10 +17,10 @@ model:
   disable_train_metrics: true # save some time by not computing metrics on the training set
   model_config:
     init_method: full_megatron
-    num_hidden_layers: 20
+    num_hidden_layers: 22
     num_attention_heads: 12
     hidden_size: 768
-    intermediate_size: 3072 # hidden_size * 4
+    intermediate_size: 1152 # hidden_size * 4
     attention_layer: rope
     attention_probs_dropout_prob: 0.0
     attn_out_bias: false

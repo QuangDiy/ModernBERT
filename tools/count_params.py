@@ -3,12 +3,96 @@ import os
 import sys
 from pathlib import Path
 
+# When counting parameters we don't need to construct the real rotary embedding /
+# FlashAttention kernels. Tell the model code to skip those hard dependencies so
+# that parameter counting works even if flash_attn isn't installed (e.g. on
+# Windows or CPU-only environments).
+os.environ.setdefault("MODERNBERT_SKIP_ROPE", "1")
+
+import importlib
+import importlib.util
+from importlib.machinery import ModuleSpec
+import types
+
 import torch
 from omegaconf import OmegaConf as om
 from transformers import AutoTokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
+
+
+def _new_spec(name: str):
+    return ModuleSpec(name=name, loader=None, is_package=True)
+
+
+def _install_flash_attn_stub():
+    """Install lightweight flash_attn stubs when the real package is unavailable."""
+
+    if importlib.util.find_spec("flash_attn") is not None:
+        # Real package is discoverable; leave it alone.
+        return
+
+    if "flash_attn" in sys.modules and getattr(sys.modules["flash_attn"], "__dict__", None):
+        # Already stubbed.
+        return
+
+    flash_attn_mod = types.ModuleType("flash_attn")
+    flash_attn_mod.__spec__ = _new_spec("flash_attn")
+    flash_attn_mod.__path__ = []
+
+    layers_mod = types.ModuleType("flash_attn.layers")
+    layers_mod.__spec__ = _new_spec("flash_attn.layers")
+    layers_mod.__path__ = []
+
+    class _IdentityRotaryEmbedding(torch.nn.Module):
+        def __init__(self, dim, base=10000.0, scale_base=None, interleaved=False):
+            super().__init__()
+            self.dim = dim
+            self.base = base
+            self.scale_base = scale_base
+            self.interleaved = interleaved
+
+        def forward(self, qkv, **kwargs):
+            return qkv
+
+    rotary_mod = types.ModuleType("flash_attn.layers.rotary")
+    rotary_mod.__spec__ = _new_spec("flash_attn.layers.rotary")
+    rotary_mod.RotaryEmbedding = _IdentityRotaryEmbedding
+
+    layers_mod.rotary = rotary_mod
+    flash_attn_mod.layers = layers_mod
+
+    ops_mod = types.ModuleType("flash_attn.ops")
+    ops_mod.__spec__ = _new_spec("flash_attn.ops")
+    ops_mod.__path__ = []
+
+    triton_mod = types.ModuleType("flash_attn.ops.triton")
+    triton_mod.__spec__ = _new_spec("flash_attn.ops.triton")
+    triton_mod.__path__ = []
+
+    triton_rotary_mod = types.ModuleType("flash_attn.ops.triton.rotary")
+    triton_rotary_mod.__spec__ = _new_spec("flash_attn.ops.triton.rotary")
+
+    def _apply_rotary(qkv, cos, sin, **kwargs):
+        return qkv
+
+    triton_rotary_mod.apply_rotary = _apply_rotary
+
+    triton_mod.rotary = triton_rotary_mod
+    ops_mod.triton = triton_mod
+    flash_attn_mod.ops = ops_mod
+
+    sys.modules["flash_attn"] = flash_attn_mod
+    sys.modules["flash_attn.layers"] = layers_mod
+    sys.modules["flash_attn.layers.rotary"] = rotary_mod
+    sys.modules["flash_attn.ops"] = ops_mod
+    sys.modules["flash_attn.ops.triton"] = triton_mod
+    sys.modules["flash_attn.ops.triton.rotary"] = triton_rotary_mod
+
+
+if os.environ.get("MODERNBERT_SKIP_ROPE") == "1":
+    _install_flash_attn_stub()
 
 from src.bert_layers.configuration_bert import FlexBertConfig
 from main import build_model 
