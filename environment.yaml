@@ -512,3 +512,5 @@ dependencies:
       - ruamel-yaml-clib==0.2.8
       - torch-optimi==0.2.1
       - zstd==1.5.5.1
+      - python-dotenv==1.2.1
+      - dotenv==0.9.9
