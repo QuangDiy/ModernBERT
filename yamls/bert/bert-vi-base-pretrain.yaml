@@ -14,7 +14,7 @@ model:
   name: flex_bert
   pretrained_model_name: ${tokenizer_name}
   tokenizer_name: ${tokenizer_name}
-  disable_train_metrics: true # save some time by not computing metrics on the training set
+  disable_train_metrics: false # save some time by not computing metrics on the training set
   model_config:
     init_method: full_megatron
     num_hidden_layers: 22
