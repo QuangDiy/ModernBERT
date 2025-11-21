@@ -190,6 +190,7 @@ def build_callback(name, kwargs):
             create_repo_if_missing=kwargs.get("create_repo_if_missing", True),
             upload_latest_only=kwargs.get("upload_latest_only", False),
             rank_zero_only=kwargs.get("rank_zero_only", True),
+            use_subfolders=kwargs.get("use_subfolders", False),
         )
     else:
         raise ValueError(f"Not sure how to build callback: {name}")

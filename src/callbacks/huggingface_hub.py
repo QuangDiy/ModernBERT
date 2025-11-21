@@ -41,6 +41,9 @@ class HuggingFaceHubUploader(Callback):
         upload_latest_only (bool): If True, only keeps the latest checkpoint in the repo.
             If False, keeps all uploaded checkpoints. Defaults to False.
         rank_zero_only (bool): Only upload from rank 0 process. Defaults to True.
+        use_subfolders (bool): If True, uploads each checkpoint to a separate subfolder 
+            (e.g., checkpoint-2000/, checkpoint-4000/). If False, uploads to repo root
+            (creates Git commits for versioning). Defaults to False.
     """
 
     def __init__(
@@ -52,6 +55,7 @@ class HuggingFaceHubUploader(Callback):
         create_repo_if_missing: bool = True,
         upload_latest_only: bool = False,
         rank_zero_only: bool = True,
+        use_subfolders: bool = False,
     ):
         self.repo_id = repo_id or os.environ.get("HF_REPO_ID")
         if not self.repo_id:
@@ -65,6 +69,7 @@ class HuggingFaceHubUploader(Callback):
         self.create_repo_if_missing = create_repo_if_missing
         self.upload_latest_only = upload_latest_only
         self.rank_zero_only = rank_zero_only
+        self.use_subfolders = use_subfolders
 
         self.api = HfApi(token=self.token)
         self.last_upload_timestamp = None
@@ -221,11 +226,22 @@ If you use this model, please cite the ModernBERT paper.
                     f.write(model_card)
 
                 # Upload to HF Hub
-                commit_message = f"Upload checkpoint at step {state.timestamp.batch.value}"
+                batch_num = state.timestamp.batch.value
+                commit_message = f"Upload checkpoint at step {batch_num}"
+                
+                # Determine path in repo based on use_subfolders setting
+                path_in_repo = None
+                if self.use_subfolders:
+                    # Upload to subfolder like "checkpoint-2000/"
+                    path_in_repo = f"checkpoint-{batch_num}"
+                    log.info(f"Uploading to {self.repo_id}/{path_in_repo}")
+                else:
+                    log.info(f"Uploading to {self.repo_id} (root)")
 
                 self.api.upload_folder(
                     folder_path=tmpdir,
                     repo_id=self.repo_id,
+                    path_in_repo=path_in_repo,
                     commit_message=commit_message,
                     token=self.token,
                 )
