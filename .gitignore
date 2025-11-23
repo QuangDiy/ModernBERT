@@ -174,3 +174,7 @@ data/
 # Claude
 
 CLAUDE.md
+
+# model
+downloaded_model/
+downstream_tasks/

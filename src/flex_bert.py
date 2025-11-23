@@ -280,7 +280,7 @@ def create_flex_bert_mlm(
 
     metrics = [MaskedAccuracy(ignore_index=-100)]
 
-    if recompute_metric_loss or model_config["loss_function"] not in ["fa_cross_entropy", "cross_entropy"]:
+    if recompute_metric_loss or config.loss_function not in ["fa_cross_entropy", "cross_entropy"]:
         if CrossEntropyLoss is not None:
             metrics = [FALanguageCrossEntropy(ignore_index=-100)] + metrics
         else:

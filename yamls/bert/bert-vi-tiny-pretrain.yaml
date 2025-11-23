@@ -20,10 +20,10 @@ model:
   disable_train_metrics: false # Set to false to compute metrics during training (MaskedAccuracy, CrossEntropy, etc.)
   model_config:
     init_method: full_megatron
-    num_hidden_layers: 6
+    num_hidden_layers: 10
     num_attention_heads: 12
-    hidden_size: 768
-    intermediate_size: 1152 # hidden_size * 4
+    hidden_size: 384
+    intermediate_size: 1152
     attention_layer: rope
     attention_probs_dropout_prob: 0.0
     attn_out_bias: false
