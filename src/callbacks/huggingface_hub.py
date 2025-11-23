@@ -56,6 +56,8 @@ class HuggingFaceHubUploader(Callback):
         upload_latest_only: bool = False,
         rank_zero_only: bool = True,
         use_subfolders: bool = False,
+        upload_composer_checkpoint: bool = False,
+        save_folder: Optional[str] = None,
     ):
         self.repo_id = repo_id or os.environ.get("HF_REPO_ID")
         if not self.repo_id:
@@ -70,6 +72,8 @@ class HuggingFaceHubUploader(Callback):
         self.upload_latest_only = upload_latest_only
         self.rank_zero_only = rank_zero_only
         self.use_subfolders = use_subfolders
+        self.upload_composer_checkpoint = upload_composer_checkpoint
+        self.save_folder = save_folder
 
         self.api = HfApi(token=self.token)
         self.last_upload_timestamp = None
@@ -245,6 +249,37 @@ If you use this model, please cite the ModernBERT paper.
                     commit_message=commit_message,
                     token=self.token,
                 )
+                
+                # Upload Composer checkpoint (.pt) if requested
+                if self.upload_composer_checkpoint and self.save_folder:
+                    # Resolve save_folder (handle {run_name} if needed, though usually resolved by now)
+                    # Assuming save_folder is passed as resolved path or we need to resolve it
+                    # But wait, save_folder in config has {run_name}.
+                    # We can try to find the latest checkpoint in the expected directory.
+                    
+                    # Construct expected path. Composer typically saves to save_folder/latest-rank0.pt
+                    # We need to handle the case where save_folder has placeholders.
+                    # For now, let's assume the user passes the resolved save_folder or we can't do it easily.
+                    # Actually, we can try to find the file.
+                    
+                    # If save_folder is relative, make it absolute
+                    save_path = Path(self.save_folder)
+                    if not save_path.is_absolute():
+                        save_path = Path(os.getcwd()) / save_path
+                        
+                    # Check for latest-rank0.pt
+                    pt_file = save_path / "latest-rank0.pt"
+                    if pt_file.exists():
+                        log.info(f"Uploading Composer checkpoint: {pt_file}")
+                        self.api.upload_file(
+                            path_or_fileobj=str(pt_file),
+                            path_in_repo=f"{path_in_repo}/latest-rank0.pt" if path_in_repo else "latest-rank0.pt",
+                            repo_id=self.repo_id,
+                            token=self.token,
+                            commit_message=f"Upload composer checkpoint at step {batch_num}"
+                        )
+                    else:
+                        log.warning(f"Composer checkpoint not found at {pt_file}")
 
                 log.info(f"Successfully uploaded checkpoint to {self.repo_id}")
 

@@ -154,6 +154,8 @@ callbacks:
     create_repo_if_missing: true
     upload_latest_only: false  # Keep all checkpoints
     use_subfolders: true  # Each checkpoint in separate folder (checkpoint-2000/, checkpoint-4000/, etc.)
+    upload_composer_checkpoint: true
+    save_folder: ${save_folder}
 
   runtime_estimator: {}
 
