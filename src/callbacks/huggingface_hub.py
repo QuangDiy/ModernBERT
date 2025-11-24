@@ -267,19 +267,44 @@ If you use this model, please cite the ModernBERT paper.
                     if not save_path.is_absolute():
                         save_path = Path(os.getcwd()) / save_path
                         
-                    # Check for latest-rank0.pt
-                    pt_file = save_path / "latest-rank0.pt"
-                    if pt_file.exists():
+                    # Try multiple checkpoint file patterns
+                    pt_files_to_try = [
+                        save_path / "latest-rank0.pt",  # Standard latest checkpoint (may be symlink)
+                        save_path / f"ba{batch_num}-rank0.pt",  # Batch-specific checkpoint
+                    ]
+                    
+                    # Also look for any checkpoint files in the directory (excluding symlinks)
+                    if save_path.exists():
+                        for f in save_path.glob("*-rank0.pt"):
+                            if not f.is_symlink():  # Skip symlinks
+                                pt_files_to_try.append(f)
+                    
+                    pt_file = None
+                    for candidate in pt_files_to_try:
+                        if candidate.exists():
+                            # Resolve symlink if it is one
+                            if candidate.is_symlink():
+                                pt_file = candidate.resolve()
+                            else:
+                                pt_file = candidate
+                            
+                            # Verify the resolved file exists
+                            if pt_file.exists():
+                                break
+                            else:
+                                pt_file = None
+                    
+                    if pt_file:
                         log.info(f"Uploading Composer checkpoint: {pt_file}")
                         self.api.upload_file(
                             path_or_fileobj=str(pt_file),
-                            path_in_repo=f"{path_in_repo}/latest-rank0.pt" if path_in_repo else "latest-rank0.pt",
+                            path_in_repo=f"{path_in_repo}/{pt_file.name}" if path_in_repo else pt_file.name,
                             repo_id=self.repo_id,
                             token=self.token,
                             commit_message=f"Upload composer checkpoint at step {batch_num}"
                         )
                     else:
-                        log.warning(f"Composer checkpoint not found at {pt_file}")
+                        log.warning(f"Composer checkpoint not found in {save_path}")
 
                 log.info(f"Successfully uploaded checkpoint to {self.repo_id}")
 
