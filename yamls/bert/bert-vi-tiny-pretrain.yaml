@@ -6,10 +6,7 @@ tokenizer_name: QuangDuy/my-tokenizer # switch to bert tokenizer until we add [M
 mlm_probability: 0.3 # FlexBERT should use 30% masking for optimal performance
 count_padding_tokens: false
 
-# Run Name - Dynamic with date, lr, batch size, and seq length
-# Format: flex-bert-tiny-YYYYMMDD-lr{lr}-bs{batch_size}-seq{seq_len}
-# Example: flex-bert-tiny-20241119-lr8e-4-bs1024-seq1024
-# Set RUN_DATE env var before training: export RUN_DATE=$(date +%Y%m%d)
+# Run Name
 run_name: bert-tiny-stage1-msl_${max_seq_len}-lr_${optimizer.lr}-ws_${scheduler.t_warmup}-md_${max_duration}
 
 # Model
@@ -17,7 +14,7 @@ model:
   name: flex_bert
   pretrained_model_name: ${tokenizer_name}
   tokenizer_name: ${tokenizer_name}
-  disable_train_metrics: false # Set to false to compute metrics during training (MaskedAccuracy, CrossEntropy, etc.)
+  disable_train_metrics: false
   model_config:
     init_method: full_megatron
     num_hidden_layers: 10
@@ -77,9 +74,9 @@ train_loader:
   drop_last: true
   num_workers: 6
   sequence_packing: true
-  batch_size_warmup_min_size: ${device_train_microbatch_size}
+  # batch_size_warmup_min_size: ${device_train_microbatch_size}
   # batch_size_warmup_tokens: 50_000_000_000tok
-  batch_size_warmup_tokens: 1_500_000_000tok
+  # batch_size_warmup_tokens: 1_500_000_000tok
 
 
 eval_loader:
@@ -123,7 +120,7 @@ global_eval_batch_size: 512 # default is 1024
 # System
 seed: 17
 device_eval_batch_size: 128
-device_train_microbatch_size: 16
+device_train_microbatch_size: 32
 # device_train_microbatch_size: auto
 precision: amp_bf16
 
@@ -147,15 +144,13 @@ callbacks:
     log_interval: 10
 
   huggingface_hub:
-    repo_id: ${oc.env:HF_USER_ID}/${run_name}  # Auto-create repo from user_id and run_name
-    token: ${oc.env:HF_TOKEN}  # HuggingFace token from .env file
-    upload_interval: 2500ba  # Upload every 2000 batches (matches save_interval)
-    private: false  # Set to true for private repository
+    repo_id: ${oc.env:HF_USER_ID}/${run_name}  
+    run_name: ${run_name}
+    token: ${oc.env:HF_TOKEN}  
+    upload_interval: ${save_interval}  
+    save_folder: ${save_folder}  
+    private: false  
     create_repo_if_missing: true
-    upload_latest_only: false  # Keep all checkpoints
-    use_subfolders: true  # Each checkpoint in separate folder (checkpoint-2000/, checkpoint-4000/, etc.)
-    upload_composer_checkpoint: true
-    save_folder: ${save_folder}
 
   runtime_estimator: {}
 
@@ -177,14 +172,14 @@ loggers:
       # If you need to watch model parameters/gradients, use wandb.watch() separately after initialization.
 
 # Checkpoint to local filesystem or remote object store
-save_interval: 2500ba
-save_num_checkpoints_to_keep: 2  # Important, this cleans up checkpoints saved to DISK
-save_folder: ./checkpoints/{run_name}
+save_interval: ${eval_interval}
+save_num_checkpoints_to_keep: 7  
+save_folder: ./checkpoints/${run_name}
 
 # Auto-resume training from latest checkpoint if interrupted
 autoresume: true  # Automatically resume from latest checkpoint in save_folder
 
 # Load from specific checkpoint to continue training or fine-tune
-# load_path: ./checkpoints/{run_name}/latest-rank0.pt
-# load_path: s3://bucket/checkpoints/{run_name}/latest-rank0.pt
+# load_path: ./checkpoints/${run_name}/latest-rank0.pt
+# load_path: s3://bucket/checkpoints/${run_name}/latest-rank0.pt
 load_path: null

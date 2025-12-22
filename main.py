@@ -155,7 +155,7 @@ def build_algorithm(name, kwargs):
         raise ValueError(f"Not sure how to build algorithm: {name}")
 
 
-def build_callback(name, kwargs):
+def build_callback(name, kwargs, cfg=None):
     if name == "lr_monitor":
         return LRMonitor()
     elif name == "memory_monitor":
@@ -182,15 +182,23 @@ def build_callback(name, kwargs):
     elif name == "packing_efficiency":
         return PackingEfficency(log_interval=kwargs.get("log_interval", 10))
     elif name == "huggingface_hub":
+        # Use run_name and save_folder from cfg if not in kwargs
+        run_name = kwargs.get("run_name", None)
+        save_folder = kwargs.get("save_folder", None)
+        if cfg is not None:
+            if run_name is None:
+                run_name = cfg.get("run_name", None)
+            if save_folder is None:
+                save_folder = cfg.get("save_folder", None)
         return HuggingFaceHubUploader(
             repo_id=kwargs.get("repo_id", None),
+            run_name=run_name,
             upload_interval=kwargs.get("upload_interval", "3500ba"),
             token=kwargs.get("token", None),
             private=kwargs.get("private", False),
             create_repo_if_missing=kwargs.get("create_repo_if_missing", True),
-            upload_latest_only=kwargs.get("upload_latest_only", False),
             rank_zero_only=kwargs.get("rank_zero_only", True),
-            use_subfolders=kwargs.get("use_subfolders", False),
+            save_folder=save_folder,
         )
     else:
         raise ValueError(f"Not sure how to build callback: {name}")
@@ -457,7 +465,7 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
         loggers.append(build_logger(name, logger_cfg_with_name))
 
     # Callbacks
-    callbacks = [build_callback(name, callback_cfg) for name, callback_cfg in cfg.get("callbacks", {}).items()]
+    callbacks = [build_callback(name, callback_cfg, cfg) for name, callback_cfg in cfg.get("callbacks", {}).items()]
 
     # Algorithms
     if (

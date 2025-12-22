@@ -7,20 +7,20 @@ mlm_probability: 0.3 # FlexBERT should use 30% masking for optimal performance
 count_padding_tokens: false
 
 # Run Name
-run_name: flex-bert-base
+run_name: bert-base-stage1-msl_${max_seq_len}-lr_${optimizer.lr}-ws_${scheduler.t_warmup}-md_${max_duration}
 
 # Model
 model:
   name: flex_bert
   pretrained_model_name: ${tokenizer_name}
   tokenizer_name: ${tokenizer_name}
-  disable_train_metrics: false # save some time by not computing metrics on the training set
+  disable_train_metrics: false
   model_config:
     init_method: full_megatron
     num_hidden_layers: 22
     num_attention_heads: 12
     hidden_size: 768
-    intermediate_size: 1152 # hidden_size * 4
+    intermediate_size: 1152
     attention_layer: rope
     attention_probs_dropout_prob: 0.0
     attn_out_bias: false
@@ -142,11 +142,12 @@ callbacks:
     log_interval: 10
 
   huggingface_hub:
-    repo_id: ${oc.env:HF_REPO_ID}  # Format: username/model-name
-    upload_interval: 3500ba  # Upload every 3500 batches (matches save_interval)
-    private: false  # Set to true for private repository
+    repo_id: ${oc.env:HF_USER_ID}/${run_name}  
+    run_name: ${run_name}  
+    upload_interval: ${save_interval}  
+    save_folder: ${save_folder} 
+    private: false  
     create_repo_if_missing: true
-    upload_latest_only: false  # Set to true to only keep latest checkpoint in repo
 
   runtime_estimator: {}
 
@@ -168,9 +169,9 @@ loggers:
       # If you need to watch model parameters/gradients, use wandb.watch() separately after initialization.
 
 # Checkpoint to local filesystem or remote object store
-save_interval: 2000ba
-save_num_checkpoints_to_keep: 1  # Important, this cleans up checkpoints saved to DISK
-save_folder: ./checkpoints/{run_name}
+save_interval: ${eval_interval}
+save_num_checkpoints_to_keep: 7  
+save_folder: ./checkpoints/${run_name}
 
 # Load from local filesystem or remote object store to
 # load_path: null

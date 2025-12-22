@@ -146,11 +146,13 @@ callbacks:
   # Upload checkpoints to Hugging Face Hub periodically
   # Configure via HF_TOKEN and HF_REPO_ID environment variables
   huggingface_hub:
-    repo_id: ${oc.env:HF_REPO_ID}  # Format: username/model-name
+    repo_id: ${oc.env:HF_USER_ID}/${run_name}  # Auto-create repo from user_id and run_name
+    run_name: ${run_name}  # Pass run_name to callback
     upload_interval: 3500ba  # Upload every 3500 batches (matches save_interval)
+    save_folder: ${save_folder}  # Tell callback where checkpoints are saved
     private: false  # Set to true for private repository
     create_repo_if_missing: true
-    upload_latest_only: false  # Set to true to only keep latest checkpoint in repo
+    # Checkpoints will be uploaded using Composer's naming: ep{epoch}-ba{step}-rank0.pt
 
 algorithms:
   gradient_clipping:
@@ -175,7 +177,7 @@ loggers:
 # Checkpoint to local filesystem or remote object store
 save_interval: 3500ba
 save_num_checkpoints_to_keep: 1  # Important, this cleans up checkpoints saved to DISK
-save_folder: './{run_name}/ckpt'  # Local checkpoint directory
+save_folder: './${run_name}/ckpt'  # Local checkpoint directory
 
 # (Optional) Load from local filesystem or remote object store to
 # start from an existing model checkpoint;
