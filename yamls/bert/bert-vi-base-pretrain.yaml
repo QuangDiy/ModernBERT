@@ -143,9 +143,10 @@ callbacks:
 
   huggingface_hub:
     repo_id: ${oc.env:HF_USER_ID}/${run_name}  
-    run_name: ${run_name}  
+    run_name: ${run_name}
+    token: ${oc.env:HF_TOKEN}  
     upload_interval: ${save_interval}  
-    save_folder: ${save_folder} 
+    save_folder: ${save_folder}  
     private: false  
     create_repo_if_missing: true
 
@@ -173,5 +174,10 @@ save_interval: ${eval_interval}
 save_num_checkpoints_to_keep: 7  
 save_folder: ./checkpoints/${run_name}
 
-# Load from local filesystem or remote object store to
-# load_path: null
+# Auto-resume training from latest checkpoint if interrupted
+autoresume: true  # Automatically resume from latest checkpoint in save_folder
+
+# Load from specific checkpoint to continue training or fine-tune
+# load_path: ./checkpoints/${run_name}/latest-rank0.pt
+# load_path: s3://bucket/checkpoints/${run_name}/latest-rank0.pt
+load_path: null
