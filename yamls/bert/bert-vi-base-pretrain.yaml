@@ -2,7 +2,7 @@ data_local: ./data/merged-dataset-1024
 data_remote: # If blank, files must be present in data_local
 
 max_seq_len: 1024
-tokenizer_name: tokenizer/HUIT-BERT # switch to bert tokenizer until we add [MASK] token to the llama tokenizer meta-llama/Llama-2-7b-hf
+tokenizer_name: QuangDuy/huit-tokenizer 
 mlm_probability: 0.3 # FlexBERT should use 30% masking for optimal performance
 count_padding_tokens: false
 
@@ -110,7 +110,7 @@ optimizer:
   filter_bias_norm_wd: true # If True, doesn't apply weight decay to norm layers and biases
   log_grad_norm: true
 
-max_duration: 90000000sp # Subsample the training data for ~90M samples
+max_duration: 92560000sp # Subsample the training data for ~90M samples
 eval_interval: 2000ba
 global_train_batch_size: 512 # default is 4096
 global_eval_batch_size: 256 # default is 1024

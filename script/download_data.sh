@@ -9,7 +9,7 @@ echo
 mkdir -p "$DEST_DIR"
 
 hf download \
-    QuangDuy/merged-dataset-1024 \
+    QuangDuy/merged-chunked-1024-v2 \
     --repo-type dataset \
     --local-dir "$DEST_DIR"
 
