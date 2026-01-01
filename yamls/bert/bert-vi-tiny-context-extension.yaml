@@ -174,7 +174,7 @@ loggers:
 # Checkpoint to local filesystem or remote object store
 save_interval: ${eval_interval}
 save_num_checkpoints_to_keep: 7  
-save_folder: ./checkpoints/${run_name}
+save_folder: /workspace/checkpoints/${run_name}
 
 # Auto-resume training from latest checkpoint if interrupted
 autoresume: true  # Automatically resume from latest checkpoint in save_folder

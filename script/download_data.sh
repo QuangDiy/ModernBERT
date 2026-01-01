@@ -1,17 +1,24 @@
 #!/bin/bash
 set -e
 
-DEST_DIR="./data/merged-dataset-1024"
+DEST_DIR="/workspace/merged-dataset-1024"
 
 echo "Downloading dataset to $DEST_DIR ..."
 echo
 
-mkdir -p "$DEST_DIR"
+mkdir -p "$DEST_DIR" "$TMPDIR"
 
-hf download \
-    QuangDuy/merged-chunked-1024-v2 \
-    --repo-type dataset \
-    --local-dir "$DEST_DIR"
+python - << 'EOF'
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="QuangDuy/merged-chunked-1024-v2",
+    repo_type="dataset",
+    local_dir="/workspace/merged-dataset-1024",
+    local_dir_use_symlinks=False,
+    resume_download=True,
+)
+EOF
 
 echo
 echo "Download completed to $DEST_DIR"
