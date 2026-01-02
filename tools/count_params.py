@@ -174,6 +174,17 @@ def main():
         try:
             cfg = load_cfg(defaults_path, yaml_path)
 
+            om.set_struct(cfg, False)
+            if getattr(cfg.model, "name", None) == "flex_bert":
+                if "model_config" not in cfg.model:
+                    cfg.model.model_config = {}
+                if "sliding_window" in cfg.model.model_config:
+                    cfg.model.model_config["sliding_window"] = -1
+                if "global_attn_every_n_layers" in cfg.model.model_config:
+                    cfg.model.model_config["global_attn_every_n_layers"] = -1
+                if "loss_function" in cfg.model.model_config and cfg.model.model_config["loss_function"] == "fa_cross_entropy":
+                    cfg.model.model_config["loss_function"] = "cross_entropy"
+
             target_vocab = None
             if args.tokenizer and args.respect_tokenizer:
                 try:
