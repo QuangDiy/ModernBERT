@@ -74,7 +74,7 @@ train_loader:
   num_workers: 6
   sequence_packing: true
   # batch_size_warmup_min_size: ${device_train_microbatch_size}
-  # batch_size_warmup_tokens: 50_000_000_000tok
+  batch_size_warmup_tokens: 1_500_000_000tok
 
 
 eval_loader:
@@ -110,8 +110,8 @@ optimizer:
   filter_bias_norm_wd: true # If True, doesn't apply weight decay to norm layers and biases
   log_grad_norm: true
 
-max_duration: 92560000sp # Subsample the training data for ~90M samples
-eval_interval: 2500ba
+max_duration: 370000000sp # Subsample the training data for ~90M samples / epochs
+eval_interval: 10000ba
 global_train_batch_size: 1024 # default is 4096
 global_eval_batch_size: 1024 # default is 1024
 
@@ -170,8 +170,8 @@ loggers:
       # If you need to watch model parameters/gradients, use wandb.watch() separately after initialization.
 
 # Checkpoint to local filesystem or remote object store
-save_interval: ${eval_interval}
-save_num_checkpoints_to_keep: 7  
+save_interval: 5000ba
+save_num_checkpoints_to_keep: 5   
 save_folder: /workspace/checkpoints/${run_name}
 
 # Auto-resume training from latest checkpoint if interrupted
