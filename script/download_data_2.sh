@@ -6,7 +6,7 @@ DEST_DIR="/workspace/ModernBERT/data/merged-dataset-4096"
 echo "Downloading dataset to $DEST_DIR ..."
 echo
 
-mkdir -p "$DEST_DIR" "$TMPDIR"
+mkdir -p "$DEST_DIR"
 
 python - << 'EOF'
 from huggingface_hub import snapshot_download
