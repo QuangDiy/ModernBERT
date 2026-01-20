@@ -2,7 +2,7 @@ import json
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import torch
 import typer
@@ -46,7 +46,7 @@ def update_config(
         "eos_token_id": eos_token_id,
         "global_attn_every_n_layers": source_config["global_attn_every_n_layers"],
         "global_rope_theta": source_config["rotary_emb_base"],
-        "gradient_checkpointing": source_config["gradient_checkpointing"],
+        "gradient_checkpointing": source_config.get("gradient_checkpointing", False),
         "hidden_activation": source_config["hidden_act"],
         "hidden_size": source_config["hidden_size"],
         "initializer_cutoff_factor": source_config["init_cutoff_factor"],
@@ -84,17 +84,21 @@ def main(
     output_name: Annotated[str, Option(help="Name of the output model", show_default=False)],
     output_dir: Annotated[Path, Option(help="Path to the output directory", show_default=False)],
     input_checkpoint: Annotated[Path, Option(help="Path to the ModernBERT Composer checkpoint file", show_default=False)],
-    bos_token_id: Annotated[int, Option(help="ID of the BOS token. Defaults to the ModernBERT BOS token.")] = 50281,
-    eos_token_id: Annotated[int, Option(help="ID of the EOS token. Defaults to the ModernBERT EOS token.")] = 50282,
-    cls_token_id: Annotated[int, Option(help="ID of the CLS token. Defaults to the ModernBERT CLS token.")] = 50281,
-    sep_token_id: Annotated[int, Option(help="ID of the SEP token. Defaults to the ModernBERT SEP token.")] = 50282,
-    pad_token_id: Annotated[int, Option(help="ID of the PAD token. Defaults to the ModernBERT PAD token.")] = 50283,
-    mask_token_id: Annotated[int, Option(help="ID of the MASK token. Defaults to the ModernBERT MASK token.")] = 50284,
+    bos_token_id: Annotated[int, Option(help="ID of the BOS token (default: [CLS]).")] = 0,
+    eos_token_id: Annotated[int, Option(help="ID of the EOS token (default: [SEP]).")] = 3,
+    cls_token_id: Annotated[int, Option(help="ID of the CLS token.")] = 0,
+    sep_token_id: Annotated[int, Option(help="ID of the SEP token.")] = 3,
+    pad_token_id: Annotated[int, Option(help="ID of the PAD token.")] = 2,
+    mask_token_id: Annotated[int, Option(help="ID of the MASK token.")] = 1,
     max_length: Annotated[int, Option(help="Maximum length of the input sequence. Defaults to the final ModernBERT sequence length.")] = 8192,
     torch_dtype: Annotated[TorchDtype, Option(help="Torch dtype to use for the model.")] = TorchDtype.float32,
     pytorch_bin: Annotated[bool, Option(help="Save weights as a pytorch_model.bin file.")] = True,
     safetensors: Annotated[bool, Option(help="Save weights as a model.safetensors file.")] = True,
     drop_tied_decoder_weights: Annotated[bool, Option(help="Don't save the wieght tied decoder weights.")] = True,
+    push_to_hub: Annotated[bool, Option(help="Upload model to HuggingFace Hub after conversion.")] = False,
+    hub_model_id: Annotated[Optional[str], Option(help="HuggingFace Hub model ID (e.g., username/model-name). Required if push_to_hub is True.")] = None,
+    hub_token: Annotated[Optional[str], Option(help="HuggingFace Hub API token. If not provided, will use stored token.")] = None,
+    private: Annotated[bool, Option(help="Make the model private on HuggingFace Hub.")] = False,
 ):  # fmt: skip
     """
     Convert a ModernBERT Composer checkpoint to HuggingFace pretrained format.
@@ -112,12 +116,33 @@ def main(
     for pattern, replacement in var_map:
         state_dict = {re.sub(pattern, replacement, name): tensor for name, tensor in state_dict.items()}
 
+    # Read tokenizer config to get actual token IDs
+    tokenizer_config_path = f"{target_path}/tokenizer_config.json"
+    with open(tokenizer_config_path, "r") as f:
+        tokenizer_config = json.load(f)
+    
+    # Get actual token IDs from tokenizer, fallback to provided values
+    actual_bos_token_id = tokenizer_config.get("bos_token_id", bos_token_id)
+    actual_eos_token_id = tokenizer_config.get("eos_token_id", eos_token_id)
+    actual_cls_token_id = tokenizer_config.get("cls_token_id", cls_token_id)
+    actual_pad_token_id = tokenizer_config.get("pad_token_id", pad_token_id)
+    actual_sep_token_id = tokenizer_config.get("sep_token_id", sep_token_id)
+    actual_mask_token_id = tokenizer_config.get("mask_token_id", mask_token_id)
+
     # Update config.json
     config_json_path = f"{target_path}/config.json"
     with open(config_json_path, "r") as f:
         config_dict = json.load(f)
+        
+        # Validate token IDs against vocab_size
+        vocab_size = config_dict.get("vocab_size", 0)
+        if actual_pad_token_id >= vocab_size:
+            print(f"Warning: pad_token_id ({actual_pad_token_id}) >= vocab_size ({vocab_size}). Using vocab_size-1 as pad_token_id.")
+            actual_pad_token_id = vocab_size - 1
+        
         config_dict = update_config(
-            config_dict, bos_token_id, eos_token_id, cls_token_id, pad_token_id, sep_token_id, max_length, torch_dtype
+            config_dict, actual_bos_token_id, actual_eos_token_id, actual_cls_token_id, 
+            actual_pad_token_id, actual_sep_token_id, max_length, torch_dtype
         )
     with open(config_json_path, "w") as f:
         json.dump(config_dict, f, indent=2)
@@ -135,27 +160,54 @@ def main(
         safetensors_path = f"{target_path}/model.safetensors"
         safetensors_save_file(state_dict, safetensors_path)
 
-    # Update tokenizer_config.json
-    tokenizer_config_path = f"{target_path}/tokenizer_config.json"
-    with open(tokenizer_config_path, "r") as f:
-        config_dict = json.load(f)
-    config_dict["model_max_length"] = max_length
-    config_dict["added_tokens_decoder"][str(mask_token_id)]["lstrip"] = True
-    config_dict["model_input_names"] = ["input_ids", "attention_mask"]
-    config_dict["tokenizer_class"] = "PreTrainedTokenizerFast"
+    # Update tokenizer_config.json (already read above)
+    tokenizer_config["model_max_length"] = max_length
+    if "added_tokens_decoder" in tokenizer_config and str(actual_mask_token_id) in tokenizer_config["added_tokens_decoder"]:
+        tokenizer_config["added_tokens_decoder"][str(actual_mask_token_id)]["lstrip"] = True
+    tokenizer_config["model_input_names"] = ["input_ids", "attention_mask"]
+    tokenizer_config["tokenizer_class"] = "PreTrainedTokenizerFast"
 
-    if "extra_special_tokens" in config_dict:
-        del config_dict["extra_special_tokens"]
+    if "extra_special_tokens" in tokenizer_config:
+        del tokenizer_config["extra_special_tokens"]
     with open(tokenizer_config_path, "w") as f:
-        json.dump(config_dict, f, indent=2)
+        json.dump(tokenizer_config, f, indent=2)
 
     # Update special_tokens_map.json
     special_tokens_path = f"{target_path}/special_tokens_map.json"
     with open(special_tokens_path, "r") as f:
-        config_dict = json.load(f)
-    config_dict["mask_token"]["lstrip"] = True
+        special_tokens_config = json.load(f)
+    special_tokens_config["mask_token"]["lstrip"] = True
     with open(special_tokens_path, "w") as f:
-        json.dump(config_dict, f, indent=2)
+        json.dump(special_tokens_config, f, indent=2)
+
+    # Upload to HuggingFace Hub if requested
+    if push_to_hub:
+        if not hub_model_id:
+            raise ValueError("--hub-model-id is required when --push-to-hub is True")
+        
+        print(f"\nUploading model to HuggingFace Hub: {hub_model_id}")
+        from huggingface_hub import HfApi
+        
+        api = HfApi(token=hub_token)
+        
+        # Create repo if it doesn't exist
+        try:
+            api.create_repo(
+                repo_id=hub_model_id,
+                private=private,
+                exist_ok=True,
+            )
+        except Exception as e:
+            print(f"Note: {e}")
+        
+        # Upload all files from the target directory
+        api.upload_folder(
+            folder_path=target_path,
+            repo_id=hub_model_id,
+            repo_type="model",
+        )
+        
+        print(f"Model uploaded successfully to: https://huggingface.co/{hub_model_id}")
 
 
 if __name__ == "__main__":
