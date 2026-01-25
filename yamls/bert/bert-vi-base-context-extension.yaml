@@ -101,7 +101,7 @@ scheduler:
 
 optimizer:
   name: decoupled_stableadamw
-  lr: 8e-5 # Peak learning rate
+  lr: 3e-4 # Peak learning rate
   betas:
   - 0.9
   - 0.98
@@ -181,3 +181,5 @@ autoresume: true  # Automatically resume from latest checkpoint in save_folder
 # load_path: ./checkpoints/${run_name}/latest-rank0.pt
 # load_path: s3://bucket/checkpoints/${run_name}/latest-rank0.pt
 load_path: null
+reset_time: true # restarts the scheduler, dataloaders, etc from step zero
+restart_override: true # resets optimizer hyperparameters (LR, WD, etc), LR Scheduler, and training microbatch size from the checkpoint's values
