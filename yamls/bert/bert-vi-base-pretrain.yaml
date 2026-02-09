@@ -9,6 +9,12 @@ count_padding_tokens: false
 # Run Name
 run_name: bert-base-stage1-msl_${max_seq_len}-lr_${optimizer.lr}-ws_${scheduler.t_warmup}-md_${max_duration}
 
+# Initialize BERT-base from BERT-tiny weights using weight tiling
+init_from_checkpoint:
+  checkpoint_cfg: yamls/bert/bert-vi-tiny-pretrain.yaml
+  checkpoint_path: /workspace/checkpoints/ep3-ba22571-rank0.pt
+  mode: tile_weights_from_middle  # Options: tile_weights_from_middle, tile_weights_from_edge, center_weights
+
 # Model
 model:
   name: flex_bert

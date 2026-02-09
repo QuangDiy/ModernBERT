@@ -359,15 +359,31 @@ def build_model(cfg: DictConfig):
 
 
 def init_from_checkpoint(cfg: DictConfig, new_model: nn.Module):
-    print(f"Initializing model from checkpoint {cfg.checkpoint_run_name}")
+    # Support two ways to specify checkpoint path:
+    # 1. Direct path: checkpoint_path (e.g., /workspace/checkpoints/model/latest-rank0.pt)
+    # 2. Combined: checkpoint_load_path + checkpoint_run_name (legacy)
+    
+    if cfg.get("checkpoint_path", None) is not None:
+        # Direct path approach
+        checkpoint_filepath = Path(cfg.checkpoint_path)
+        checkpoint_name = checkpoint_filepath.stem  # Use filename for logging
+        print(f"Initializing model from checkpoint {checkpoint_filepath}")
+    else:
+        # Legacy approach: combine load_path and run_name
+        checkpoint_name = cfg.checkpoint_run_name
+        checkpoint_filepath = Path(cfg.checkpoint_load_path) / f"{cfg.checkpoint_run_name}" / "latest-rank0.pt"
+        print(f"Initializing model from checkpoint {checkpoint_name}")
+    
+    # Load checkpoint config
     checkpoint_cfg = Path(cfg.checkpoint_cfg)
     assert checkpoint_cfg.exists(), f"Checkpoint config {checkpoint_cfg} does not exist"
     pretrained_cfg = om.load(checkpoint_cfg)
 
+    # Build pretrained model
     pretrained_model = build_model(pretrained_cfg.model)
     n_params = sum(p.numel() for p in pretrained_model.parameters())
 
-    checkpoint_filepath = Path(cfg.checkpoint_load_path) / f"{cfg.checkpoint_run_name}" / "latest-rank0.pt"
+    # Load checkpoint weights
     assert checkpoint_filepath.exists(), f"Checkpoint {checkpoint_filepath} does not exist"
     state = torch.load(_ensure_valid_checkpoint(checkpoint_filepath), map_location="cpu")
 
@@ -381,13 +397,14 @@ def init_from_checkpoint(cfg: DictConfig, new_model: nn.Module):
         model_config = OmegaConf.to_container(pretrained_cfg.model.model_config, resolve=True)
     pretrained_config = FlexBertConfig.from_pretrained(pretrained_cfg.model.pretrained_model_name, **model_config)
 
+    # Upscale weights using tiling
     init_mlm_model_from_pretrained(
         config=pretrained_config,
         pretrained_model=pretrained_model.model,
         new_model=new_model.model,
         mode=cfg.get("mode", "tile_weights_from_middle"),
     )
-    print(f"Initalized model from checkpoint {cfg.checkpoint_run_name} with {n_params=:.4e} parameters")
+    print(f"Initialized model from checkpoint {checkpoint_name} with {n_params=:.4e} parameters")
 
 
 def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -> Optional[Trainer]:
