@@ -1546,7 +1546,7 @@ def init_model_from_pretrained(
     # Calculate the layer mapping
     pretrained_layers = len(pretrained_model.encoder.layers)
     new_layers = len(new_model.encoder.layers)
-    layer_mapping = [round(i * pretrained_layers / new_layers) for i in range(new_layers)]
+    layer_mapping = [min(round(i * pretrained_layers / new_layers), pretrained_layers - 1) for i in range(new_layers)]
 
     # Initialize layers
     for new_model_idx, pretrained_idx in enumerate(layer_mapping):
