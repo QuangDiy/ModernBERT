@@ -181,7 +181,7 @@ save_num_checkpoints_to_keep: 5
 save_folder: /workspace/checkpoints/${run_name}
 
 # Auto-resume training from latest checkpoint if interrupted
-autoresume: true  # Automatically resume from latest checkpoint in save_folder
+autoresume: false  # Automatically resume from latest checkpoint in save_folder
 
 # Load from specific checkpoint to continue training or fine-tune
 # load_path: ./checkpoints/${run_name}/latest-rank0.pt
