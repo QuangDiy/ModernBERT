@@ -44,6 +44,15 @@ logger = logging.getLogger(__name__)
 
 # Subclass DistributedSampler to use PCG64DXSM for shuffling
 class DistributedSamplerPCG64DXSM(DistributedSampler):
+    def __init__(self, *args, start_index: int = 0, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Number of per-rank samples to skip at the start of the first epoch.
+        # Set via resume_start_index in the dataset config when resuming from a
+        # checkpoint with spin_dataloaders=false to avoid re-reading 60k+ batches.
+        # Automatically resets to 0 after the first __iter__ call so subsequent
+        # epochs start from the beginning of the shuffled order.
+        self.start_index = start_index
+
     def __iter__(self) -> Iterator[int]:
         if self.shuffle:
             # deterministically shuffle based on epoch and seed
@@ -69,7 +78,11 @@ class DistributedSamplerPCG64DXSM(DistributedSampler):
         indices = indices[self.rank : self.total_size : self.num_replicas]
         assert len(indices) == self.num_samples
 
-        return iter(indices)
+        # Skip already-consumed indices when resuming with spin_dataloaders=false.
+        # Pure index-array slice — no disk I/O. Reset to 0 for subsequent epochs.
+        start = self.start_index
+        self.start_index = 0
+        return iter(indices[start:])
 
 
 def build_tokenizer(
@@ -388,6 +401,7 @@ def build_text_dataloader(
             shuffle=cfg.dataset.get("shuffle", False),
             seed=cfg.dataset.get("shuffle_seed", 9176),
             drop_last=cfg.drop_last,
+            start_index=cfg.dataset.get("resume_start_index", 0),
         )
 
     mlm_probability = cfg.dataset.get("mlm_probability", None)

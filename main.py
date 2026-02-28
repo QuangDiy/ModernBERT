@@ -55,6 +55,30 @@ from src.scheduler import CosineInverseSqrtScheduler, OneMinusSqrtScheduler, War
 from src.sequence_packer import get_num_samples_in_packed_batch, split_packed_batch
 
 
+def _infer_resume_start_index(load_path: str, world_size: int) -> int:
+    """Read sample_in_epoch from a Composer checkpoint and return the per-rank skip count.
+
+    Only rank 0 loads the file; the result is broadcast to all ranks via an
+    all-reduce so no separate gloo process group is required.
+    """
+    device = torch.device(f"cuda:{dist.get_local_rank()}" if torch.cuda.is_available() else "cpu")
+    val = torch.zeros(1, dtype=torch.int64, device=device)
+    if dist.get_global_rank() == 0:
+        try:
+            ckpt_path = load_path.format(rank=0)
+            ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            sample_in_epoch = int(ckpt["state"]["timestamp"]["sample_in_epoch"])
+            val[0] = sample_in_epoch // world_size
+            print(
+                f"resume_start_index auto-detected: {int(val[0])} "
+                f"(= {sample_in_epoch} sample_in_epoch / {world_size} GPUs)"
+            )
+        except Exception as exc:
+            print(f"Warning: could not read sample_in_epoch from '{load_path}': {exc}. Defaulting to 0.")
+    dist.all_reduce(val, reduce_operation="MAX")
+    return int(val.item())
+
+
 def update_batch_size_info(cfg: DictConfig):
     global_batch_size, device_microbatch_size = cfg.global_train_batch_size, cfg.device_train_microbatch_size
     if global_batch_size % dist.get_world_size() != 0:
@@ -424,6 +448,19 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
     if cfg.get("init_from_checkpoint", None) is not None:
         init_from_checkpoint(cfg.init_from_checkpoint, model)
 
+    # When spin_dataloaders=False, auto-read sample_in_epoch from the checkpoint
+    # so the sampler can skip already-consumed indices without disk I/O.
+    # Skipped if resume_start_index is already set explicitly in the config.
+    if (
+        not cfg.get("spin_dataloaders", True)
+        and cfg.get("load_path", None) is not None
+        and cfg.train_loader.dataset.get("resume_start_index", None) is None
+    ):
+        with om.open_dict(cfg.train_loader.dataset):
+            cfg.train_loader.dataset.resume_start_index = _infer_resume_start_index(
+                cfg.load_path, dist.get_world_size()
+            )
+
     # Dataloaders
     print("Building train loader...")
     train_loader = build_dataloader(
@@ -528,6 +565,7 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
         parallelism_config=cfg.get("fsdp_config", None),
         compile_config=cfg.get("compile_config", None),
         dist_timeout=cfg.get("dist_timeout", 300),
+        spin_dataloaders=cfg.get("spin_dataloaders", True),
     )
 
     print("Logging config...")

@@ -188,3 +188,5 @@ autoresume: false  # Automatically resume from latest checkpoint in save_folder
 # load_path: ./checkpoints/${run_name}/latest-rank0.pt
 # load_path: s3://bucket/checkpoints/${run_name}/latest-rank0.pt
 load_path: /workspace/checkpoints/20260226_1540-bert-base-stage1-msl_1024-lr_0.0005-ws_0.05dur-md_370000000sp/ep0-ba60000-rank0.pt
+
+spin_dataloaders: false
