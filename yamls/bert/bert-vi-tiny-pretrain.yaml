@@ -118,6 +118,7 @@ global_eval_batch_size: 2048 # default is 1024
 
 # System
 seed: 17
+dist_timeout: 3600  # PyTorch NCCL watchdog timeout in seconds (default is 300s = 5 min)
 device_eval_batch_size: 128
 device_train_microbatch_size: 128
 # device_train_microbatch_size: auto
@@ -176,9 +177,9 @@ save_num_checkpoints_to_keep: 5
 save_folder: /workspace/checkpoints/${run_name}
 
 # Auto-resume training from latest checkpoint if interrupted
-autoresume: true  # Automatically resume from latest checkpoint in save_folder
+autoresume: false  # Automatically resume from latest checkpoint in save_folder
 
 # Load from specific checkpoint to continue training or fine-tune
-# load_path: ./checkpoints/${run_name}/latest-rank0.pt
+load_path: /workspace/checkpoints/${run_name}/latest-rank0.pt
 # load_path: s3://bucket/checkpoints/${run_name}/latest-rank0.pt
-load_path: null
+# load_path: null

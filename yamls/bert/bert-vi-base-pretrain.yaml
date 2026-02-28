@@ -12,7 +12,7 @@ run_name: bert-base-stage1-msl_${max_seq_len}-lr_${optimizer.lr}-ws_${scheduler.
 # Initialize BERT-base from BERT-tiny weights using weight tiling
 init_from_checkpoint:
   checkpoint_cfg: yamls/bert/bert-vi-tiny-pretrain.yaml
-  checkpoint_path: /workspace/checkpoints/ep3-ba22571-rank0.pt
+  checkpoint_path: /workspace/ModernBERT/checkpoints/ep3-ba22571-rank0.pt
   mode: tile_weights_from_middle  # Options: tile_weights_from_middle, tile_weights_from_edge, center_weights
 
 # Model
@@ -61,7 +61,7 @@ model:
     sliding_window: 128
     global_attn_every_n_layers: 3
     unpad_embeddings: true
-    compile_model: true
+    compile_model: false
     masked_prediction: true
 
 # Dataloaders
@@ -123,6 +123,7 @@ global_eval_batch_size: 1024 # default is 1024
 
 # System
 seed: 17
+dist_timeout: 3600  # PyTorch NCCL watchdog timeout in seconds (default is 300s = 5 min)
 device_eval_batch_size: 64
 device_train_microbatch_size: 64
 # device_train_microbatch_size: auto
@@ -186,4 +187,4 @@ autoresume: false  # Automatically resume from latest checkpoint in save_folder
 # Load from specific checkpoint to continue training or fine-tune
 # load_path: ./checkpoints/${run_name}/latest-rank0.pt
 # load_path: s3://bucket/checkpoints/${run_name}/latest-rank0.pt
-load_path: null
+load_path: /workspace/checkpoints/20260226_1540-bert-base-stage1-msl_1024-lr_0.0005-ws_0.05dur-md_370000000sp/ep0-ba60000-rank0.pt
