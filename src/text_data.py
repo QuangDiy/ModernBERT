@@ -42,8 +42,40 @@ Tokenizer = Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
 logger = logging.getLogger(__name__)
 
 
+def compute_skip_samples_per_rank(load_path: str, world_size: int) -> int:
+    """
+    Extract the number of already-seen raw sequences per rank from a Composer checkpoint.
+
+    Composer accumulates ``state.timestamp.sample`` using ``get_num_samples_in_packed_batch``,
+    which counts individual (unpacked) sequences emitted globally across all ranks.
+    Dividing by world_size gives the per-rank skip offset for the sampler.
+
+    A small number of sequences (~packer_buffer_size) consumed but not yet emitted at
+    checkpoint time will be replayed — this is negligible and ensures no sample is skipped
+    that was never actually trained on.
+    """
+    ckpt = torch.load(load_path, map_location="cpu", weights_only=False)
+    try:
+        sample_count = ckpt["state"]["timestamp"]["sample"]["value"]
+    except KeyError as exc:
+        raise RuntimeError(
+            f"Could not read state.timestamp.sample from checkpoint '{load_path}'. "
+            f"Missing key: {exc}"
+        ) from exc
+    skip = sample_count // world_size
+    logger.info(
+        f"Fast resume: state.timestamp.sample={sample_count}, world_size={world_size} "
+        f"→ skip_samples_per_rank={skip}"
+    )
+    return skip
+
+
 # Subclass DistributedSampler to use PCG64DXSM for shuffling
 class DistributedSamplerPCG64DXSM(DistributedSampler):
+    def __init__(self, *args, skip_samples: int = 0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.skip_samples = skip_samples
+
     def __iter__(self) -> Iterator[int]:
         if self.shuffle:
             # deterministically shuffle based on epoch and seed
@@ -68,6 +100,12 @@ class DistributedSamplerPCG64DXSM(DistributedSampler):
         # subsample
         indices = indices[self.rank : self.total_size : self.num_replicas]
         assert len(indices) == self.num_samples
+
+        # Skip already-seen samples on resume. Self-clears after the first epoch so
+        # subsequent epochs iterate the full permutation without any offset.
+        if self.skip_samples > 0:
+            indices = indices[self.skip_samples :]
+            self.skip_samples = 0
 
         return iter(indices)
 
@@ -388,6 +426,7 @@ def build_text_dataloader(
             shuffle=cfg.dataset.get("shuffle", False),
             seed=cfg.dataset.get("shuffle_seed", 9176),
             drop_last=cfg.drop_last,
+            skip_samples=cfg.get("skip_samples_per_rank", 0),
         )
 
     mlm_probability = cfg.dataset.get("mlm_probability", None)

@@ -425,6 +425,12 @@ def main(cfg: DictConfig, return_trainer: bool = False, do_train: bool = True) -
         init_from_checkpoint(cfg.init_from_checkpoint, model)
 
     # Dataloaders
+    load_path = cfg.get("load_path", None)
+    load_weights_only = cfg.get("load_weights_only", False)
+    if load_path and not load_weights_only and cfg.train_loader.get("name") == "text":
+        skip = text_data_module.compute_skip_samples_per_rank(load_path, dist.get_world_size())
+        OmegaConf.update(cfg.train_loader, "skip_samples_per_rank", skip, merge=True)
+
     print("Building train loader...")
     train_loader = build_dataloader(
         cfg=cfg.train_loader,
