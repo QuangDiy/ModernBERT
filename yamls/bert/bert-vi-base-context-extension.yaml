@@ -175,11 +175,11 @@ save_num_checkpoints_to_keep: 5
 save_folder: /workspace/checkpoints/${run_name}
 
 # Auto-resume training from latest checkpoint if interrupted
-autoresume: true  # Automatically resume from latest checkpoint in save_folder
+autoresume: false  # Automatically resume from latest checkpoint in save_folder
 
 # Load from specific checkpoint to continue training or fine-tune
 # load_path: ./checkpoints/${run_name}/latest-rank0.pt
 # load_path: s3://bucket/checkpoints/${run_name}/latest-rank0.pt
-load_path: null
+load_path: /workspace/ModernBERT/checkpoints/ep3-ba210000-rank0.pt
 reset_time: true # restarts the scheduler, dataloaders, etc from step zero
 restart_override: true # resets optimizer hyperparameters (LR, WD, etc), LR Scheduler, and training microbatch size from the checkpoint's values
